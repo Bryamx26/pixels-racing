@@ -22,8 +22,8 @@ function assert(cond: unknown, msg: string): asserts cond {
   if (!cond) throw new Error(msg);
 }
 
-test('une voiture fait 1/3 de la largeur de la chaussée', () => {
-  assert(Math.abs(CAR_WIDTH * 3 - ROAD_WIDTH) < 1e-9, `${CAR_WIDTH} × 3 ≠ ${ROAD_WIDTH}`);
+test('une voiture fait 1/4 de la largeur de la chaussée', () => {
+  assert(Math.abs(CAR_WIDTH * 4 - ROAD_WIDTH) < 1e-9, `${CAR_WIDTH} × 4 ≠ ${ROAD_WIDTH}`);
 });
 
 test('16 voitures dans l\'atlas', () => assert(CARS.length === 16, `${CARS.length}`));
@@ -88,19 +88,29 @@ test('gaz à fond en ligne droite : la voiture accélère puis plafonne', () => 
   const b = gridPose(t, 0);
   const speeds: number[] = [];
   for (let i = 0; i < 240; i++) {
-    stepCar(b, { throttle: 1, brake: 0, steer: 0, handbrake: false }, t, 1 / 60);
+    stepCar(b, { throttle: 1, brake: 0, steer: 0 }, t, 1 / 60);
     speeds.push(Math.hypot(b.vx, b.vy));
   }
   assert(speeds[59] > 200, `après 1 s : ${speeds[59].toFixed(0)}`);
   assert(speeds[239] < 480, `vitesse max ${speeds[239].toFixed(0)}`);
 });
 
+test('freiner à grande vitesse fait déraper, freiner lentement non', () => {
+  const t = getTrack('neon');
+  const b = gridPose(t, 0);
+  for (let i = 0; i < 150; i++) stepCar(b, { throttle: 1, brake: 0, steer: 0 }, t, 1 / 60);
+  assert(stepCar(b, { throttle: 0, brake: 1, steer: 0.5 }, t, 1 / 60).drift, 'pas de dérapage à pleine vitesse');
+  const c = gridPose(t, 1);
+  for (let i = 0; i < 20; i++) stepCar(c, { throttle: 1, brake: 0, steer: 0 }, t, 1 / 60);
+  assert(!stepCar(c, { throttle: 0, brake: 1, steer: 0.5 }, t, 1 / 60).drift, 'dérapage à basse vitesse');
+});
+
 test('les commandes réseau se décodent et sont bornées', () => {
-  const p = packInput(5, { throttle: 1, brake: 0, steer: -0.5, handbrake: true });
+  const p = packInput(5, { throttle: 1, brake: 0, steer: -0.5 });
   const u = unpackInput(p)!;
-  assert(u.seq === 5 && u.input.steer === -0.5 && u.input.handbrake, JSON.stringify(u));
-  assert(unpackInput([1, 500, 0, -900, 0])!.input.steer === -1, 'borne');
-  assert(unpackInput(['x']) === null && unpackInput([1, NaN, 0, 0, 0]) === null, 'invalide');
+  assert(u.seq === 5 && u.input.steer === -0.5, JSON.stringify(u));
+  assert(unpackInput([1, 500, 0, -900])!.input.steer === -1, 'borne');
+  assert(unpackInput(['x']) === null && unpackInput([1, NaN, 0, 0]) === null, 'invalide');
 });
 
 if (failed) {

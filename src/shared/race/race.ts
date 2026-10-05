@@ -51,7 +51,8 @@ export function gridPose(track: Track, slot: number): CarBody {
   const side = slot % 2 === 0 ? -1 : 1;
   const back = 4 + row * Math.ceil((CAR_LENGTH + 24) / 8) + (side > 0 ? 4 : 0);
   const idx = wrapIdx(track, -back);
-  const [x, y] = pointAt(track, idx, (side * ROAD_WIDTH) / 4);
+  // Voies 1 et 4 (une voiture = une voie).
+  const [x, y] = pointAt(track, idx, (side * ROAD_WIDTH * 3) / 8);
   return { x, y, a: Math.atan2(track.tys[idx], track.txs[idx]), vx: 0, vy: 0, idx, prog: -back };
 }
 
@@ -134,7 +135,7 @@ export class Race {
       const res = stepCar(r, inp, t, DT);
       updateProgress(r, t);
       r.offroad = res.offroad;
-      r.drift = inp.handbrake && Math.hypot(r.vx, r.vy) > 120;
+      r.drift = res.drift;
       const laps = Math.floor(r.prog / t.n);
       if (laps > r.lapsDone && r.finishTick < 0) {
         r.lapsDone = laps;

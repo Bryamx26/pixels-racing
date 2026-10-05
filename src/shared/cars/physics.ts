@@ -28,6 +28,8 @@ export const CAR = {
   drag: 0.12,
   grip: 10,
   driftGrip: 2.2,
+  /** Freiner au-dessus de cette vitesse fait déraper la voiture. */
+  driftSpeed: 250,
   turnRate: 3.1,
   grassMaxSpeed: 200,
   grassDrag: 3,
@@ -46,10 +48,17 @@ export function forwardSpeed(b: CarBody): number {
   return b.vx * Math.cos(b.a) + b.vy * Math.sin(b.a);
 }
 
-/** Avance une voiture d'un pas (`dt` s). Renvoie true si elle a touché le mur. */
-export function stepCar(b: CarBody, inp: CarInput, track: Track, dt: number): { wall: boolean; offroad: boolean } {
+/** Avance une voiture d'un pas (`dt` s) : mur touché, dans l'herbe, en dérapage. */
+export function stepCar(
+  b: CarBody,
+  inp: CarInput,
+  track: Track,
+  dt: number,
+): { wall: boolean; offroad: boolean; drift: boolean } {
   const cos = Math.cos(b.a), sin = Math.sin(b.a);
   let vf = b.vx * cos + b.vy * sin;
+  // Coup de frein lancé à grande vitesse : l'arrière décroche et la voiture dérape.
+  const drift = inp.brake > 0.05 && vf > CAR.driftSpeed;
   let vr = -b.vx * sin + b.vy * cos;
   const offroad = Math.abs(lateralOffset(track, b.idx, b.x, b.y)) > OFFROAD_DIST;
 
@@ -66,7 +75,6 @@ export function stepCar(b: CarBody, inp: CarInput, track: Track, dt: number): { 
   vf -= Math.sign(vf) * roll;
   vf *= 1 - CAR.drag * dt;
   if (offroad && Math.abs(vf) > CAR.grassMaxSpeed) vf -= (vf - Math.sign(vf) * CAR.grassMaxSpeed) * CAR.grassDrag * dt;
-  if (inp.handbrake) vf *= 1 - 0.7 * dt;
 
   // Direction : rien à l'arrêt, un peu moins vive à pleine vitesse, inversée en marche arrière.
   const sp = Math.abs(vf);
@@ -75,10 +83,10 @@ export function stepCar(b: CarBody, inp: CarInput, track: Track, dt: number): { 
     CAR.turnRate *
     clamp(sp / 90, 0, 1) *
     (1 - 0.3 * clamp(sp / CAR.maxSpeed, 0, 1)) *
-    (inp.handbrake ? 1.35 : 1) *
+    (drift ? 1.35 : 1) *
     Math.sign(vf);
-  // Adhérence : la vitesse latérale disparaît vite, sauf au frein à main (dérapage).
-  vr *= Math.exp(-(inp.handbrake ? CAR.driftGrip : offroad ? CAR.grip * 0.6 : CAR.grip) * dt);
+  // Adhérence : la vitesse latérale disparaît vite, sauf en dérapage.
+  vr *= Math.exp(-(drift ? CAR.driftGrip : offroad ? CAR.grip * 0.6 : CAR.grip) * dt);
 
   b.vx = vf * cos - vr * sin;
   b.vy = vf * sin + vr * cos;
@@ -104,7 +112,7 @@ export function stepCar(b: CarBody, inp: CarInput, track: Track, dt: number): { 
       b.vy *= 0.92;
     }
   }
-  return { wall, offroad };
+  return { wall, offroad, drift };
 }
 
 /** Met à jour la progression déroulée à partir du nouvel échantillon. */

@@ -4,15 +4,15 @@ export const DT = 1 / TICK_RATE;
 /** Le serveur envoie un instantané tous les N ticks (30 Hz). */
 export const SNAPSHOT_EVERY = 2;
 
-/** Largeur de la chaussée (unités monde = pixels de l'image du circuit). */
-export const ROAD_WIDTH = 84;
-/** Une voiture fait 1/3 de la largeur de la chaussée : trois de front au maximum. */
-export const CAR_WIDTH = ROAD_WIDTH / 3;
+/** Largeur d'une voiture (unités monde = pixels de l'image du circuit). */
+export const CAR_WIDTH = 28;
+/** Une voiture fait 1/4 de la largeur de la chaussée : quatre de front au maximum. */
+export const ROAD_WIDTH = CAR_WIDTH * 4;
 export const CAR_LENGTH = 50;
 /** Largeur des vibreurs rouges et blancs de chaque côté de la chaussée. */
 export const KERB_WIDTH = 6;
 /** Distance entre l'axe de la piste et le mur de pneus. */
-export const WALL_DIST = ROAD_WIDTH / 2 + KERB_WIDTH + 52;
+export const WALL_DIST = ROAD_WIDTH / 2 + KERB_WIDTH + 44;
 
 export const MAX_PLAYERS = 8;
 export const MIN_LAPS = 1;

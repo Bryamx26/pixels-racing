@@ -3,10 +3,10 @@
 Jeu de course en pixel art vue du dessus, **multijoueur en ligne** dans le navigateur, jouable sur **PC et mobile**.
 
 - 16 voitures (tirées de la planche de sprites), 2 circuits (Circuit Néon, Anneau du Lac).
-- Une voiture fait exactement **1/3 de la largeur de la chaussée** : trois voitures de front, la piste est marquée en trois voies.
+- Une voiture fait exactement **1/4 de la largeur de la chaussée** : quatre voitures de front, la piste est marquée en quatre voies.
 - Course solo contre 0 à 7 bots, ou salles privées en ligne par code (jusqu'à 8 pilotes, bots en option), lien d'invitation `/?salle=CODE`.
 - Serveur autoritaire 60 Hz ; voiture du joueur prédite localement, autres voitures interpolées ; reconnexion automatique (pilote auto pendant la coupure).
-- Mobile : boutons tactiles ◀ ▶ / GAZ / FREIN / DRIFT, accélération automatique en option, plein écran paysage, installable sur l'écran d'accueil.
+- Mobile : boutons tactiles ◀ ▶ / GAZ / FREIN, accélération automatique en option, plein écran paysage, installable sur l'écran d'accueil.
 
 ## Lancer
 
@@ -27,7 +27,7 @@ Docker : `docker compose up -d --build`.
 | Gaz | ↑ ou Z (W en QWERTY) | GAZ | RT / A |
 | Frein, marche arrière | ↓ ou S | FREIN | LT / B |
 | Diriger | ← → ou Q D | ◀ ▶ | stick gauche |
-| Drift (frein à main) | Espace | DRIFT | X / RB |
+| Dérapage | freiner à grande vitesse | FREIN | LT |
 | Menu | Échap | II | |
 
 ## Organisation

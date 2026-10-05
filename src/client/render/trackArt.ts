@@ -105,12 +105,12 @@ export function renderTrack(t: Track): HTMLCanvasElement {
   loopPath(ctx, t);
   ctx.stroke();
 
-  // Deux lignes pointillées : trois voies, une voiture de large chacune.
+  // Trois lignes pointillées : quatre voies, une voiture de large chacune.
   ctx.lineWidth = 2;
   ctx.strokeStyle = 'rgba(240, 240, 240, 0.6)';
   ctx.setLineDash([14, 18]);
-  for (const side of [-1, 1]) {
-    loopPath(ctx, t, (side * ROAD_WIDTH) / 6);
+  for (const side of [-1, 0, 1]) {
+    loopPath(ctx, t, (side * ROAD_WIDTH) / 4);
     ctx.stroke();
   }
   ctx.setLineDash([]);

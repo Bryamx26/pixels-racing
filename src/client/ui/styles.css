@@ -134,7 +134,6 @@ html, body {
 .tbtn[data-k='left'], .tbtn[data-k='right'] { font-size: clamp(22px, 6vmin, 34px); width: clamp(72px, 22vmin, 120px); }
 .tbtn.big { width: clamp(80px, 24vmin, 128px); height: clamp(80px, 24vmin, 128px); border-color: rgba(94, 232, 122, 0.8); }
 .tbtn[data-k='brake'] { border-color: rgba(255, 77, 77, 0.8); }
-.tbtn.small { height: clamp(44px, 12vmin, 64px); align-self: flex-start; border-color: rgba(255, 204, 51, 0.8); }
 .tbtn.on { background: rgba(255, 255, 255, 0.35); transform: scale(0.95); }
 
 /* ---------- Écrans ---------- */

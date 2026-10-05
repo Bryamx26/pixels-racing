@@ -25,7 +25,7 @@ export class BotDriver {
     // Coincé contre un mur ou une voiture : petite marche arrière en braquant à l'opposé.
     if (this.reverseTicks > 0) {
       this.reverseTicks--;
-      return { throttle: 0, brake: 1, steer: this.reverseTicks % 120 < 60 ? -1 : 1, handbrake: false };
+      return { throttle: 0, brake: 1, steer: this.reverseTicks % 120 < 60 ? -1 : 1 };
     }
     this.stuckTicks = Math.abs(vf) < 25 ? this.stuckTicks + 1 : 0;
     if (this.stuckTicks > 75) {
@@ -53,7 +53,6 @@ export class BotDriver {
       throttle: tooFast ? 0 : 1,
       brake: vf > target + 45 ? 1 : 0,
       steer,
-      handbrake: false,
     };
   }
 }

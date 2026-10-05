@@ -76,7 +76,6 @@ export class Controls {
     let right = this.down('ArrowRight', 'KeyD') || t.has('right');
     let gas = this.down('ArrowUp', 'KeyW') || t.has('gas') ? 1 : 0;
     let brake = this.down('ArrowDown', 'KeyS') || t.has('brake') ? 1 : 0;
-    let handbrake = this.down('Space', 'ShiftLeft', 'ShiftRight') || t.has('drift');
     if (this.autoGas && !brake) gas = 1;
 
     let analog: number | null = null;
@@ -87,7 +86,6 @@ export class Controls {
       const btn = (i: number) => pad.buttons[i]?.value ?? 0;
       gas = Math.max(gas, btn(7), btn(0));
       brake = Math.max(brake, btn(6), btn(1));
-      handbrake ||= btn(2) > 0.5 || btn(5) > 0.5;
       left ||= btn(14) > 0.5;
       right ||= btn(15) > 0.5;
     }
@@ -100,11 +98,11 @@ export class Controls {
       if (Math.sign(this.steer) !== target) this.steer = 0;
       this.steer = clamp(this.steer + target * dt * 6, -1, 1);
     }
-    return { throttle: gas, brake, steer: this.steer, handbrake };
+    return { throttle: gas, brake, steer: this.steer };
   }
 }
 
-const GAME_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space']);
+const GAME_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']);
 
 /** Vrai si l'appareil est tactile (téléphone, tablette). */
 export const isTouchDevice = () => matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window;

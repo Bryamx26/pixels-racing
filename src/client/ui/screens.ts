@@ -55,8 +55,8 @@ export function botOptions(selected: number, max: number): string {
 }
 
 export const KEYS_HELP = `<div class="keys">
-  PC : <b>↑</b>/<b>Z</b> gaz · <b>↓</b>/<b>S</b> frein et marche arrière · <b>←→</b>/<b>Q D</b> diriger · <b>ESPACE</b> drift · <b>ÉCHAP</b> menu. Manette : gâchettes + stick.<br>
-  Mobile : ◀ ▶ à gauche, GAZ / FREIN / DRIFT à droite. Tiens le téléphone à l'horizontale.
+  PC : <b>↑</b>/<b>Z</b> gaz · <b>↓</b>/<b>S</b> frein et marche arrière · <b>←→</b>/<b>Q D</b> diriger · <b>ÉCHAP</b> menu. Freiner à pleine vitesse fait déraper. Manette : gâchettes + stick.<br>
+  Mobile : ◀ ▶ à gauche, GAZ / FREIN à droite. Tiens le téléphone à l'horizontale.
 </div>`;
 
 export function homeScreen(name: string, joinCode: string, autoGas: boolean, muted: boolean): string {
