@@ -1,5 +1,5 @@
 import { DT } from '../../shared/constants';
-import { Race, type Entrant, type RaceEvent, type RaceState } from '../../shared/race/race';
+import { DEFAULT_OPTIONS, Race, type Entrant, type RaceEvent, type RaceOptions, type RaceState } from '../../shared/race/race';
 import type { Controls } from '../input/controls';
 import { FixedClock, lerpRacers, quantize, type Pose, type RaceView } from './raceView';
 
@@ -11,6 +11,8 @@ export class LocalRace implements RaceView {
   private prev = new Map<string, Pose>();
   private events: RaceEvent[] = [];
   private _paused = false;
+  /** Appelé après chaque tick (enregistrement du fantôme). */
+  onTick: ((state: RaceState) => void) | null = null;
 
   constructor(
     trackId: string,
@@ -18,8 +20,9 @@ export class LocalRace implements RaceView {
     entrants: Entrant[],
     readonly myId: string,
     private controls: Controls,
+    options: RaceOptions = DEFAULT_OPTIONS,
   ) {
-    this.race = new Race(trackId, laps, entrants, Math.floor(Math.random() * 1e6));
+    this.race = new Race(trackId, laps, entrants, Math.floor(Math.random() * 1e6), options);
   }
 
   get track() {
@@ -47,6 +50,7 @@ export class LocalRace implements RaceView {
       for (const r of this.race.state.racers) this.prev.set(r.id, { x: r.x, y: r.y, a: r.a });
       const input = quantize(this.controls.read(DT));
       this.events.push(...this.race.step(new Map([[this.myId, input]])));
+      this.onTick?.(this.race.state);
     }
   }
 

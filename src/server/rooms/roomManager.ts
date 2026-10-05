@@ -1,5 +1,7 @@
 import { DEFAULT_LAPS, MAX_LAPS, MIN_LAPS, RECONNECT_GRACE_MS } from '../../shared/constants';
-import { TRACKS } from '../../shared/track/tracks';
+import { TRACKS, customTrackDef, registerTrack } from '../../shared/track/tracks';
+import { validateTrack, MAX_POINTS } from '../../shared/track/validate';
+import type { Records } from '../records/records';
 import type { ClientMsg } from '../../shared/net/protocol';
 import { Room } from './room';
 import { SessionRegistry, type Session } from './session';
@@ -16,6 +18,8 @@ const validLaps = (n: unknown) =>
 export class RoomManager {
   readonly rooms = new Map<string, Room>();
   readonly sessions = new SessionRegistry();
+
+  constructor(private records: Records) {}
 
   private newCode(): string {
     for (;;) {
@@ -37,7 +41,7 @@ export class RoomManager {
       case 'create': {
         if (room) room.remove(s.id);
         this.cleanup(room);
-        const r = new Room(this.newCode(), validTrack(msg.trackId) ?? TRACKS[0].id, validLaps(msg.laps) ?? DEFAULT_LAPS, s);
+        const r = new Room(this.newCode(), validTrack(msg.trackId) ?? TRACKS[0].id, validLaps(msg.laps) ?? DEFAULT_LAPS, s, this.records);
         this.rooms.set(r.code, r);
         console.log(`[salle ${r.code}] créée par ${s.name}`);
         return;
@@ -66,7 +70,21 @@ export class RoomManager {
         return;
       case 'config': {
         if (!room) return;
+        // Circuit personnalisé : validé ici avec les mêmes règles que l'éditeur.
+        if (msg.custom) {
+          const pts = msg.custom.points;
+          if (!Array.isArray(pts) || pts.length > MAX_POINTS || !pts.every((p) => Array.isArray(p) && p.length === 2 && p.every(Number.isFinite)))
+            return fail('Circuit invalide.');
+          const def = customTrackDef(String(msg.custom.name ?? ''), pts as [number, number][]);
+          const problems = validateTrack(def);
+          if (problems.length) return fail(`Circuit refusé : ${problems[0].message}`);
+          registerTrack(def);
+          const err = room.configure(s.id, { custom: def });
+          if (err) fail(err);
+          return;
+        }
         const err = room.configure(s.id, {
+          items: typeof msg.items === 'boolean' ? msg.items : undefined,
           trackId: validTrack(msg.trackId),
           laps: validLaps(msg.laps),
           bots: typeof msg.bots === 'number' && Number.isFinite(msg.bots) ? msg.bots : undefined,

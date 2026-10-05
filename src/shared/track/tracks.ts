@@ -14,6 +14,8 @@ export interface TrackDef {
   /** Graine du décor (arbres, tribunes). */
   seed: number;
   grass: string;
+  /** Pont : la piste se croise en ce point, le second passage est en hauteur. */
+  bridge?: [number, number];
 }
 
 export const TRACKS: TrackDef[] = [
@@ -44,8 +46,56 @@ export const TRACKS: TrackDef[] = [
       [450, 1450], [700, 1550],
     ],
   },
+  {
+    id: 'huit',
+    name: 'Le Grand Huit',
+    width: 3100,
+    height: 2050,
+    seed: 41,
+    grass: '#3d8a44',
+    bridge: [1500, 1000],
+    points: [
+      [800, 1600], [1150, 1420], [1500, 1000], [1850, 620], [2300, 420], [2750, 620], [2850, 1050],
+      [2650, 1480], [2200, 1620], [1850, 1400], [1500, 1000], [1150, 620], [750, 420], [330, 580],
+      [230, 1000], [330, 1420], [500, 1600],
+    ],
+  },
 ];
 
-export function getTrackDef(id: string): TrackDef {
-  return TRACKS.find((t) => t.id === id) ?? TRACKS[0];
+/** Circuits créés dans l'éditeur (envoyés par l'hôte d'une salle ou chargés en solo). */
+const custom = new Map<string, TrackDef>();
+
+export function registerTrack(def: TrackDef): void {
+  custom.set(def.id, def);
 }
+
+export function getTrackDef(id: string): TrackDef {
+  return TRACKS.find((t) => t.id === id) ?? custom.get(id) ?? TRACKS[0];
+}
+
+export const isOfficialTrack = (id: string) => TRACKS.some((t) => t.id === id);
+
+/** Taille du monde de l'éditeur. */
+export const EDITOR_WIDTH = 3000;
+export const EDITOR_HEIGHT = 2000;
+
+/** Construit la définition d'un circuit personnalisé ; l'id dépend des points (même tracé = même id). */
+export function customTrackDef(name: string, points: [number, number][]): TrackDef {
+  let h = 2166136261;
+  for (const [x, y] of points) h = Math.imul(h ^ (Math.round(x) * 31 + Math.round(y)), 16777619);
+  return {
+    id: 'perso-' + (h >>> 0).toString(36),
+    name: name.slice(0, 24) || 'Mon circuit',
+    width: EDITOR_WIDTH,
+    height: EDITOR_HEIGHT,
+    seed: h >>> 0,
+    grass: '#43913d',
+    points: points.map(([x, y]) => [Math.round(x), Math.round(y)]),
+  };
+}
+
+/** Modèle de départ : un ovale allongé avec une petite chicane. */
+export const EDITOR_TEMPLATE: [number, number][] = [
+  [1200, 1650], [1800, 1650], [2350, 1600], [2650, 1300], [2650, 800], [2350, 450], [1800, 380],
+  [1450, 520], [1150, 380], [650, 420], [350, 750], [350, 1250], [650, 1600],
+];

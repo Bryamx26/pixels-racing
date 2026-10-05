@@ -11,8 +11,11 @@ export class BotDriver {
   private laneTarget: number;
   private stuckTicks = 0;
   private reverseTicks = 0;
+  private reverseSteer = 1;
   /** 1 = pilote parfait, plus bas = plus lent dans les virages. */
   readonly skill: number;
+  /** Vrai quand une ligne droite s'ouvre devant (bon moment pour le turbo ou le nitro). */
+  straight = false;
 
   constructor(seed: number, skill?: number) {
     this.rand = mulberry32(seed);
@@ -25,12 +28,15 @@ export class BotDriver {
     // Coincé contre un mur ou une voiture : petite marche arrière en braquant à l'opposé.
     if (this.reverseTicks > 0) {
       this.reverseTicks--;
-      return { throttle: 0, brake: 1, steer: this.reverseTicks % 120 < 60 ? -1 : 1 };
+      return { throttle: 0, brake: 1, steer: this.reverseSteer };
     }
     this.stuckTicks = Math.abs(vf) < 25 ? this.stuckTicks + 1 : 0;
-    if (this.stuckTicks > 75) {
+    if (this.stuckTicks > 45) {
+      // En marche arrière, braquer à l'opposé ramène le nez vers la piste.
+      const [px, py] = pointAt(track, b.idx + 10, 0);
+      this.reverseSteer = wrapAngle(Math.atan2(py - b.y, px - b.x) - b.a) > 0 ? -1 : 1;
       this.stuckTicks = 0;
-      this.reverseTicks = 50;
+      this.reverseTicks = 55;
     }
     if (this.rand() < 0.01) this.laneTarget = (this.rand() - 0.5) * ROAD_WIDTH * 0.45;
     this.lane += (this.laneTarget - this.lane) * 0.02;
@@ -49,10 +55,12 @@ export class BotDriver {
     }
     const target = CAR.maxSpeed * this.skill * clamp(1.05 - curve * 0.62, 0.38, 1);
     const tooFast = vf > target + 15;
+    this.straight = curve < 0.18 && vf > 180;
     return {
       throttle: tooFast ? 0 : 1,
       brake: vf > target + 45 ? 1 : 0,
       steer,
+      boost: this.straight && b.boost > 0.6,
     };
   }
 }

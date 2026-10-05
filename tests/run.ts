@@ -1,12 +1,12 @@
 /** Tests headless de la simulation : `npm test`. */
-import { CAR_WIDTH, ROAD_WIDTH, TICK_RATE, WALL_DIST } from '../src/shared/constants';
+import { CAR_WIDTH, ROAD_WIDTH, TICK_RATE } from '../src/shared/constants';
 import { packInput, unpackInput } from '../src/shared/input';
-import { wrapAngle } from '../src/shared/math';
 import { draftFactor, stepCar } from '../src/shared/cars/physics';
 import { Race, gridPose, standings, formatTime } from '../src/shared/race/race';
-import { TRACKS } from '../src/shared/track/tracks';
-import { getTrack, wrapIdx } from '../src/shared/track/track';
+import { EDITOR_TEMPLATE, TRACKS, customTrackDef } from '../src/shared/track/tracks';
+import { getTrack, nearestSample } from '../src/shared/track/track';
 import { CARS } from '../src/shared/cars/carAtlas';
+import { validateTrack } from '../src/shared/track/validate';
 
 let failed = 0;
 function test(name: string, fn: () => void) {
@@ -30,34 +30,9 @@ test('16 voitures dans l\'atlas', () => assert(CARS.length === 16, `${CARS.lengt
 
 for (const def of TRACKS) {
   const t = getTrack(def.id);
-  test(`${def.name} : les portions de piste ne se touchent pas`, () => {
-    const minArc = Math.ceil((WALL_DIST * 4) / 8);
-    let worst = Infinity;
-    for (let i = 0; i < t.n; i += 2) {
-      for (let j = 0; j < t.n; j += 2) {
-        const arc = Math.min(Math.abs(i - j), t.n - Math.abs(i - j));
-        if (arc < minArc) continue;
-        worst = Math.min(worst, Math.hypot(t.xs[i] - t.xs[j], t.ys[i] - t.ys[j]));
-      }
-    }
-    assert(worst > 2 * WALL_DIST + 20, `distance mini ${worst.toFixed(0)} ≤ ${2 * WALL_DIST + 20}`);
-  });
-  test(`${def.name} : virages assez larges pour le mur intérieur`, () => {
-    let minR = Infinity;
-    for (let i = 0; i < t.n; i++) {
-      const k = wrapIdx(t, i + 4);
-      const da = Math.abs(wrapAngle(Math.atan2(t.tys[k], t.txs[k]) - Math.atan2(t.tys[i], t.txs[i])));
-      if (da > 1e-4) minR = Math.min(minR, 32 / da);
-    }
-    assert(minR > WALL_DIST * 1.05, `rayon mini ${minR.toFixed(0)}`);
-  });
-  test(`${def.name} : le circuit tient dans l'image`, () => {
-    for (let i = 0; i < t.n; i++) {
-      assert(
-        t.xs[i] > WALL_DIST + 20 && t.ys[i] > WALL_DIST + 20 && t.xs[i] < def.width - WALL_DIST - 20 && t.ys[i] < def.height - WALL_DIST - 20,
-        `échantillon ${i} hors image (${t.xs[i].toFixed(0)}, ${t.ys[i].toFixed(0)})`,
-      );
-    }
+  test(`${def.name} : circuit jouable (pas de chevauchement, virages, terrain)`, () => {
+    const problems = validateTrack(def, t);
+    assert(problems.length === 0, problems.map((p) => `${p.message} (${p.at.map(Math.round)})`).join(', '));
   });
   test(`${def.name} : 8 bots bouclent 3 tours`, () => {
     const race = new Race(def.id, 3, Array.from({ length: 8 }, (_, i) => ({ id: 'b' + i, name: 'Bot', carId: i, bot: true })), 3);
@@ -129,9 +104,9 @@ test("l'aspiration fait aller plus vite derrière une voiture", () => {
       lead.y = me.y + Math.sin(me.a) * 120;
       lead.vx = me.vx;
       lead.vy = me.vy;
-      const d = withLeader ? draftFactor(me, [lead]) : 0;
+      const d = withLeader ? draftFactor(me, [lead], t.n) : 0;
       if (withLeader && i >= 60) total += d;
-      stepCar(me, { throttle: 1, brake: 0, steer: 0 }, t, 1 / 60, d);
+      stepCar(me, { throttle: 1, brake: 0, steer: 0 }, t, 1 / 60, { draft: d });
     }
     return { speed: Math.hypot(me.vx, me.vy), draft: total / 30 };
   };
@@ -146,6 +121,70 @@ test('les commandes réseau se décodent et sont bornées', () => {
   assert(u.seq === 5 && u.input.steer === -0.5, JSON.stringify(u));
   assert(unpackInput([1, 500, 0, -900])!.input.steer === -1, 'borne');
   assert(unpackInput(['x']) === null && unpackInput([1, NaN, 0, 0]) === null, 'invalide');
+});
+
+/** Lance une voiture en ligne droite sur `ticks` et rend sa vitesse finale. */
+function straightRun(setup: (b: ReturnType<typeof gridPose>) => void, inp: { boost?: boolean }, damage = false, ticks = 150) {
+  const t = getTrack('neon');
+  const b = gridPose(t, 0);
+  setup(b);
+  for (let i = 0; i < ticks; i++) stepCar(b, { throttle: 1, brake: 0, steer: 0, ...inp }, t, 1 / 60, { damage });
+  return { b, speed: Math.hypot(b.vx, b.vy) };
+}
+
+test('le turbo se déclenche avec une jauge pleine et accélère', () => {
+  const plain = straightRun(() => {}, {});
+  const boosted = straightRun((b) => (b.boost = 1), { boost: true });
+  const empty = straightRun((b) => (b.boost = 0.1), { boost: true });
+  assert(boosted.speed > plain.speed + 25, `${boosted.speed.toFixed(0)} vs ${plain.speed.toFixed(0)}`);
+  assert(Math.abs(empty.speed - plain.speed) < 1, 'jauge trop basse : pas de turbo');
+});
+
+test('une voiture abîmée va moins vite', () => {
+  const ok = straightRun(() => {}, {}, true, 200);
+  const hurt = straightRun((b) => (b.damage = 1), {}, true, 200);
+  assert(hurt.speed < ok.speed * 0.85, `${hurt.speed.toFixed(0)} vs ${ok.speed.toFixed(0)}`);
+});
+
+function soloRace(options = { items: true, damage: true }) {
+  const race = new Race('neon', 3, [{ id: 'me', name: 'Moi', carId: 0, bot: false }], 1, options);
+  const idle = new Map([['me', { throttle: 0, brake: 0, steer: 0 }]]);
+  while (race.state.phase === 'countdown') race.step(idle);
+  return { race, me: race.state.racers[0], idle };
+}
+
+test('les boîtes donnent un objet, et sans objets il n\'y en a pas', () => {
+  const { race, me, idle } = soloRace();
+  const p = race.state.pickups[0];
+  assert(race.state.pickups.length > 0, 'aucune boîte');
+  me.x = p.x;
+  me.y = p.y;
+  me.idx = nearestSample(race.track, p.x, p.y);
+  race.step(idle);
+  assert(me.item !== null && p.respawn > 0, 'objet non ramassé');
+  assert(soloRace({ items: false, damage: true }).race.state.pickups.length === 0, 'boîtes présentes sans objets');
+});
+
+test("l'huile fait partir en tête-à-queue, le bouclier protège", () => {
+  for (const shielded of [false, true]) {
+    const { race, me, idle } = soloRace();
+    me.shield = shielded ? 300 : 0;
+    race.state.oils.push({ x: me.x, y: me.y, owner: 'autre', armed: 0, until: race.state.tick + 600 });
+    race.step(idle);
+    assert(shielded ? me.spin === 0 : me.spin > 0, shielded ? 'bouclier inefficace' : 'pas de tête-à-queue');
+  }
+});
+
+test('le nitro se déclenche à l\'appui du bouton objet', () => {
+  const { race, me } = soloRace();
+  me.item = 'nitro';
+  race.step(new Map([['me', { throttle: 1, brake: 0, steer: 0, item: true }]]));
+  assert(me.item === null && me.boostTicks > 0, 'nitro non utilisé');
+});
+
+test("le modèle de l'éditeur est un circuit valide", () => {
+  const problems = validateTrack(customTrackDef('Test', EDITOR_TEMPLATE));
+  assert(problems.length === 0, problems.map((p) => p.message).join(', '));
 });
 
 if (failed) {

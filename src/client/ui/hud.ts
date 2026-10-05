@@ -1,12 +1,15 @@
 import { COUNTDOWN_TICKS, TICK_RATE } from '../../shared/constants';
-import { formatTime, raceTicks, standings, type RaceEvent, type RaceState } from '../../shared/race/race';
+import { CAR } from '../../shared/cars/physics';
+import { ITEM_NAMES, formatTime, inPit, raceTicks, standings, type RaceEvent, type RaceState } from '../../shared/race/race';
 import type { Track } from '../../shared/track/track';
 import { Minimap } from '../render/minimap';
 
 /** Interface pendant la course : place, tour, chrono, vitesse, minicarte, feux de départ. */
 export class Hud {
   private minimap: Minimap;
-  private els: Record<'pos' | 'lap' | 'time' | 'speed' | 'center' | 'net', HTMLElement>;
+  private els: Record<'pos' | 'lap' | 'time' | 'speed' | 'center' | 'net' | 'boost' | 'damage' | 'item' | 'extra', HTMLElement>;
+  /** Texte libre sous le chrono (fantôme du contre-la-montre). */
+  extra = '';
   private flash: { text: string; until: number; small: boolean } | null = null;
   private wrongWay = 0;
   onMenu: () => void = () => {};
@@ -17,6 +20,12 @@ export class Hud {
         <div class="hud-pos"></div>
         <div class="hud-lap"></div>
         <div class="hud-time"></div>
+        <div class="hud-extra"></div>
+      </div>
+      <div class="hud-bars">
+        <div class="hud-item"></div>
+        <div class="bar boost"><i></i><span>TURBO</span></div>
+        <div class="bar damage"><i></i><span>DÉGÂTS</span></div>
       </div>
       <canvas id="minimap"></canvas>
       <button class="hud-menu secondary" aria-label="Menu">II</button>
@@ -24,7 +33,7 @@ export class Hud {
       <div class="hud-speed"></div>
       <div class="hud-net"></div>`;
     const q = (s: string) => root.querySelector<HTMLElement>(s)!;
-    this.els = { pos: q('.hud-pos'), lap: q('.hud-lap'), time: q('.hud-time'), speed: q('.hud-speed'), center: q('.hud-center'), net: q('.hud-net') };
+    this.els = { pos: q('.hud-pos'), lap: q('.hud-lap'), time: q('.hud-time'), speed: q('.hud-speed'), center: q('.hud-center'), net: q('.hud-net'), boost: q('.bar.boost'), damage: q('.bar.damage'), item: q('.hud-item'), extra: q('.hud-extra') };
     this.minimap = new Minimap(q('#minimap') as HTMLCanvasElement);
     q('.hud-menu').addEventListener('click', () => this.onMenu());
   }
@@ -44,8 +53,15 @@ export class Hud {
       if (e.type === 'lap' && e.id === myId) {
         this.message(e.lap === state.laps ? 'DERNIER TOUR !' : `TOUR ${e.lap}/${state.laps}`, 1600);
       }
+      if (e.type === 'pickup' && e.id === myId) this.message(ITEM_NAMES[e.item].toUpperCase() + ' !', 900, true);
+      if (e.type === 'spin' && e.id === myId) this.message('HUILE !', 1000);
+      if (e.type === 'boost' && e.id === myId) this.message('TURBO !', 700, true);
       if (e.type === 'finish' && e.id === myId) this.message(`ARRIVÉE ! ${e.place}${e.place === 1 ? 'er' : 'e'}`, 3000);
     }
+  }
+
+  private touchReady(k: string, on: boolean): void {
+    document.querySelector(`#touch .tbtn[data-k='${k}']`)?.classList.toggle('ready', on);
   }
 
   update(track: Track, state: RaceState, myId: string, dt: number, net?: { rtt: number }): void {
@@ -59,6 +75,19 @@ export class Hud {
       const t = me.finishTick >= 0 ? me.finishTick - COUNTDOWN_TICKS : raceTicks(state);
       const best = me.bestLap ? formatTime(me.bestLap) : '--';
       this.els.time.innerHTML = `${formatTime(t)}<br><span class="best">MT ${best}</span>`;
+      // Jauges : turbo (bleu, clignote quand utilisable), dégâts, objet en réserve.
+      const boostLevel = me.boostTicks > 0 ? me.boostTicks / CAR.boostTicksFull : me.boost;
+      (this.els.boost.firstElementChild as HTMLElement).style.width = `${Math.min(1, boostLevel) * 100}%`;
+      this.els.boost.classList.toggle('ready', me.boost >= CAR.boostMin && me.boostTicks <= 0);
+      this.els.boost.classList.toggle('on', me.boostTicks > 0);
+      this.els.damage.hidden = !state.options.damage;
+      (this.els.damage.firstElementChild as HTMLElement).style.width = `${me.damage * 100}%`;
+      this.els.item.hidden = !state.options.items;
+      this.els.item.className = 'hud-item' + (me.item ? ' ' + me.item : '');
+      this.els.item.textContent = me.item ? ITEM_NAMES[me.item] : '—';
+      this.els.extra.textContent = this.extra;
+      this.touchReady('boost', me.boost >= CAR.boostMin && me.boostTicks <= 0);
+      this.touchReady('item', !!me.item);
       const kmh = Math.round(Math.hypot(me.vx, me.vy) * 0.5);
       this.els.speed.innerHTML = `${kmh} <small>KM/H</small>`;
       // Mauvais sens : la vitesse va contre le sens de la piste.
@@ -78,6 +107,12 @@ export class Hud {
       c.className = 'hud-center' + (this.flash.small ? ' small' : '');
       c.innerHTML =
         (this.flash.text === 'GO !' ? '<div class="lights go"><i></i><i></i><i></i></div>' : '') + this.flash.text;
+    } else if (me?.repairing) {
+      c.className = 'hud-center small';
+      c.textContent = `RÉPARATION… ${Math.round((1 - me.damage) * 100)} %`;
+    } else if (me && me.damage > 0.5 && state.phase === 'race' && !inPit(track, me)) {
+      c.className = 'hud-center small';
+      c.textContent = 'VOITURE ABÎMÉE : ARRÊTE-TOI AUX STANDS';
     } else if (me && me.draft > 0.3 && state.phase === 'race') {
       c.className = 'hud-center small';
       c.textContent = 'ASPIRATION !';

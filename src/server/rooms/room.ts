@@ -4,6 +4,8 @@ import { round2 } from '../../shared/math';
 import { CARS } from '../../shared/cars/carAtlas';
 import { Race, type Entrant, type RaceEvent, type RaceState } from '../../shared/race/race';
 import type { LobbyPlayer, RoomInfo, ServerMsg } from '../../shared/net/protocol';
+import type { TrackDef } from '../../shared/track/tracks';
+import type { Records } from '../records/records';
 import type { Session } from './session';
 
 /** File d'entrées au-delà de laquelle on rattrape le retard du client. */
@@ -31,6 +33,8 @@ export class Room {
   hostId: string;
   race: Race | null = null;
   bots = 0;
+  items = true;
+  custom: TrackDef | null = null;
   private events: RaceEvent[] = [];
   private endedAt = -1;
   private joinCounter = 0;
@@ -40,6 +44,7 @@ export class Room {
     public trackId: string,
     public laps: number,
     host: Session,
+    private records?: Records,
   ) {
     this.hostId = host.id;
     this.add(host);
@@ -86,10 +91,15 @@ export class Room {
     this.broadcastInfo();
   }
 
-  configure(by: string, cfg: { trackId?: string; laps?: number; bots?: number }): string | null {
+  configure(by: string, cfg: { trackId?: string; laps?: number; bots?: number; items?: boolean; custom?: TrackDef }): string | null {
     if (by !== this.hostId) return "Seul l'hôte peut changer les réglages.";
     if (this.race) return 'Course en cours.';
     if (cfg.trackId) this.trackId = cfg.trackId;
+    if (cfg.custom) {
+      this.custom = cfg.custom;
+      this.trackId = cfg.custom.id;
+    }
+    if (cfg.items !== undefined) this.items = cfg.items;
     if (cfg.laps !== undefined) this.laps = cfg.laps;
     if (cfg.bots !== undefined) this.bots = Math.max(0, Math.min(MAX_PLAYERS - this.members.size, cfg.bots | 0));
     this.broadcastInfo();
@@ -115,7 +125,7 @@ export class Room {
     }
     // Grille mélangée : personne ne part toujours en pole.
     entrants.sort(() => Math.random() - 0.5);
-    this.race = new Race(this.trackId, this.laps, entrants, Math.floor(Math.random() * 1e6));
+    this.race = new Race(this.trackId, this.laps, entrants, Math.floor(Math.random() * 1e6), { items: this.items, damage: true });
     for (const m of this.members.values()) {
       m.queue = [];
       m.input = NO_INPUT;
@@ -155,7 +165,17 @@ export class Room {
       inputs.set(m.session.id, m.input);
       if (!m.session.connected) autopilot.add(m.session.id);
     }
-    this.events.push(...race.step(inputs, autopilot));
+    const events = race.step(inputs, autopilot);
+    this.events.push(...events);
+    // Classement : chaque tour bouclé par un humain est proposé (vérifié par le serveur).
+    for (const e of events) {
+      if (e.type !== 'lap' && e.type !== 'finish') continue;
+      const r = race.state.racers.find((x) => x.id === e.id);
+      if (!r || r.bot || !this.members.has(r.id)) continue;
+      const ticks = e.type === 'lap' ? e.ticks : e.lapTicks;
+      const place = this.records?.add(race.state.trackId, { name: r.name, ticks, carId: r.carId, at: '', online: true }) ?? 0;
+      if (place) this.broadcast({ t: 'info', message: `${r.name} entre au classement : ${place}e meilleur tour !` });
+    }
 
     if (race.state.tick % SNAPSHOT_EVERY === 0) this.broadcastSnapshot();
 
@@ -188,7 +208,8 @@ export class Room {
         connected: m.session.connected,
         host: m.session.id === this.hostId,
       }));
-    return { code: this.code, trackId: this.trackId, laps: this.laps, bots: this.bots, phase: this.phase, players };
+    const custom = this.custom && this.custom.id === this.trackId ? this.custom : null;
+    return { code: this.code, trackId: this.trackId, laps: this.laps, bots: this.bots, items: this.items, custom, phase: this.phase, players };
   }
 
   broadcast(msg: ServerMsg): void {

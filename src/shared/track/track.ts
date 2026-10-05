@@ -14,7 +14,14 @@ export interface Track {
   /** Tangente unitaire (sens de la course). La normale « droite » vaut (-ty, tx). */
   txs: Float64Array;
   tys: Float64Array;
+  /** Échantillons du passage en hauteur (pont), inclusifs ; null sans pont. */
+  bridge: [number, number] | null;
+  /** Échantillons du passage du dessous. */
+  under: [number, number] | null;
 }
+
+/** Rayon autour du croisement couvert par le pont. */
+export const BRIDGE_RADIUS = 230;
 
 /** Spline de Catmull-Rom centripète (passe par les points, sans boucles parasites). */
 function catmullRom(pts: [number, number][], perSeg: number): [number, number][] {
@@ -40,6 +47,9 @@ function catmullRom(pts: [number, number][], perSeg: number): [number, number][]
 }
 
 const cache = new Map<string, Track>();
+
+/** Vrai si l'échantillon i est sur le pont. */
+export const onBridge = (t: Track, i: number) => !!t.bridge && i >= t.bridge[0] && i <= t.bridge[1];
 
 export function getTrack(id: string): Track {
   const def = getTrackDef(id);
@@ -76,7 +86,25 @@ export function buildTrack(def: TrackDef): Track {
     txs[i] = dx / l;
     tys[i] = dy / l;
   }
-  return { def, n, length: total, xs, ys, txs, tys };
+  // Pont : parmi les échantillons proches du croisement, le second passage est en hauteur.
+  let bridge: [number, number] | null = null;
+  let under: [number, number] | null = null;
+  if (def.bridge) {
+    const [bx, by] = def.bridge;
+    const near: number[] = [];
+    for (let i = 0; i < n; i++) if (Math.hypot(xs[i] - bx, ys[i] - by) < BRIDGE_RADIUS) near.push(i);
+    const runs: [number, number][] = [];
+    for (const i of near) {
+      const last = runs[runs.length - 1];
+      if (last && i === last[1] + 1) last[1] = i;
+      else runs.push([i, i]);
+    }
+    if (runs.length >= 2) {
+      bridge = runs[runs.length - 1];
+      under = runs[0];
+    }
+  }
+  return { def, n, length: total, xs, ys, txs, tys, bridge, under };
 }
 
 export const wrapIdx = (t: Track, i: number) => ((i % t.n) + t.n) % t.n;

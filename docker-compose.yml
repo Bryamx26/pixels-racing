@@ -4,4 +4,11 @@ services:
     image: pixels-racing
     ports:
       - "3000:3000"
+    environment:
+      - RECORDS_FILE=/data/records.json
+    volumes:
+      - records:/data
     restart: unless-stopped
+
+volumes:
+  records:

@@ -1,7 +1,10 @@
 import { CARS } from '../../shared/cars/carAtlas';
 import { MAX_LAPS, MAX_PLAYERS, MIN_LAPS } from '../../shared/constants';
 import { COUNTDOWN_TICKS } from '../../shared/constants';
+import { carClass } from '../../shared/cars/stats';
 import { formatTime, standings, type RaceState } from '../../shared/race/race';
+import type { TrackDef } from '../../shared/track/tracks';
+import type { LapRecord } from '../../shared/net/protocol';
 import { TRACKS } from '../../shared/track/tracks';
 import type { RoomInfo } from '../../shared/net/protocol';
 import { atlasUrl } from '../render/renderer';
@@ -34,12 +37,25 @@ export function carThumb(carId: number, scale?: number): string {
 export function carPicker(selected: number, taken: Set<number> = new Set()): string {
   return `<div class="cars">${CARS.map(
     (c) => `<button class="car-pick ${c.id === selected ? 'sel' : ''} ${taken.has(c.id) ? 'taken' : ''}" data-a="car" data-car="${c.id}">
-      ${carThumb(c.id)}<span>${esc(c.name)}</span></button>`,
-  ).join('')}</div>`;
+      ${carThumb(c.id)}<span>${esc(c.name)}</span><small class="cls ${carClass(c.id).id}">${carClass(c.id).name}</small></button>`,
+  ).join('')}</div>${carInfo(selected)}`;
 }
 
-export function trackOptions(selected: string): string {
-  return TRACKS.map((t) => `<option value="${t.id}" ${t.id === selected ? 'selected' : ''}>${esc(t.name)}</option>`).join('');
+/** Barres de caractéristiques de la voiture choisie. */
+export function carInfo(carId: number): string {
+  const k = carClass(carId);
+  const bar = (label: string, v: number, lo: number, hi: number) =>
+    `<div class="stat"><span>${label}</span><i><b style="width:${Math.round(((v - lo) / (hi - lo)) * 80 + 20)}%"></b></i></div>`;
+  return `<div class="car-info" id="car-info"><div><b>${esc(CARS[carId]?.name ?? '')}</b> · ${k.name} — ${esc(k.hint)}</div>
+    ${bar('Accélération', k.stats.accel, 0.88, 1.1)}${bar('Vitesse', k.stats.top, 0.94, 1.08)}${bar('Tenue de route', k.stats.grip, 0.86, 1.14)}${bar('Poids', k.stats.mass, 0.8, 1.55)}
+  </div>`;
+}
+
+export function trackOptions(selected: string, custom: TrackDef | null = null): string {
+  const list = custom ? [...TRACKS, custom] : TRACKS;
+  return list
+    .map((t) => `<option value="${t.id}" ${t.id === selected ? 'selected' : ''}>${esc(t.name)}${t === custom ? ' (perso)' : ''}</option>`)
+    .join('');
 }
 
 export function lapOptions(selected: number): string {
@@ -55,8 +71,9 @@ export function botOptions(selected: number, max: number): string {
 }
 
 export const KEYS_HELP = `<div class="keys">
-  PC : <b>↑</b>/<b>Z</b> gaz · <b>↓</b>/<b>S</b> frein et marche arrière · <b>←→</b>/<b>Q D</b> diriger · <b>ÉCHAP</b> menu. Freiner à pleine vitesse fait déraper. Manette : gâchettes + stick.<br>
-  Mobile : ◀ ▶ à gauche, GAZ / FREIN à droite. Tiens le téléphone à l'horizontale.
+  PC : <b>↑</b>/<b>Z</b> gaz · <b>↓</b>/<b>S</b> frein · <b>←→</b>/<b>Q D</b> diriger · <b>ESPACE</b> turbo · <b>E</b> objet · <b>ÉCHAP</b> menu. Manette : gâchettes, stick, X turbo, Y objet.<br>
+  Freiner à pleine vitesse fait déraper ; déraper et rouler dans l'aspiration remplit le turbo. Voiture abîmée ? Arrête-toi sur la bande jaune des STANDS.<br>
+  Mobile : ◀ ▶ à gauche ; GAZ, FREIN, TURBO et OBJET à droite. Tiens le téléphone à l'horizontale.
 </div>`;
 
 export function homeScreen(name: string, joinCode: string, autoGas: boolean, muted: boolean): string {
@@ -66,11 +83,16 @@ export function homeScreen(name: string, joinCode: string, autoGas: boolean, mut
     <label class="field">Ton pseudo<input data-a="name" id="name" maxlength="12" value="${esc(name)}" placeholder="Pilote" autocomplete="off"></label>
     <div class="row">
       <button data-a="solo">COURSE SOLO</button>
+      <button data-a="trial">CONTRE-LA-MONTRE</button>
       <button data-a="create">CRÉER UNE SALLE</button>
     </div>
     <div class="row">
       <input class="code" id="code" maxlength="5" placeholder="CODE" value="${esc(joinCode)}" autocomplete="off">
       <button class="secondary" data-a="join">REJOINDRE</button>
+    </div>
+    <div class="row">
+      <button class="secondary" data-a="editor">ÉDITEUR DE CIRCUIT</button>
+      <button class="secondary" data-a="records">CLASSEMENT</button>
     </div>
     <div class="row">
       <label class="check"><input type="checkbox" data-a="autogas" ${autoGas ? 'checked' : ''}> Accélération automatique</label>
@@ -80,14 +102,29 @@ export function homeScreen(name: string, joinCode: string, autoGas: boolean, mut
   </div>`;
 }
 
-export function soloScreen(carId: number, trackId: string, laps: number, bots: number): string {
+export function soloScreen(
+  carId: number,
+  trackId: string,
+  laps: number,
+  bots: number,
+  items: boolean,
+  custom: TrackDef | null,
+  trial: boolean,
+  best: string,
+): string {
   return `<div class="screen wide">
-    <h2>COURSE SOLO</h2>
+    <h2>${trial ? 'CONTRE-LA-MONTRE' : 'COURSE SOLO'}</h2>
+    ${trial ? `<p class="hint">Seul en piste contre ton fantôme (ton meilleur tour). Record perso : ${best}</p>` : ''}
     <div class="row">
-      <label class="field">Circuit<select data-a="track">${trackOptions(trackId)}</select></label>
+      <label class="field">Circuit<select data-a="track">${trackOptions(trackId, custom)}</select></label>
       <label class="field">Tours<select data-a="laps">${lapOptions(laps)}</select></label>
-      <label class="field">Adversaires<select data-a="bots">${botOptions(bots, MAX_PLAYERS - 1)}</select></label>
+      ${
+        trial
+          ? ''
+          : `<label class="field">Adversaires<select data-a="bots">${botOptions(bots, MAX_PLAYERS - 1)}</select></label>`
+      }
     </div>
+    ${trial ? '' : `<div class="row"><label class="check"><input type="checkbox" data-a="items" ${items ? 'checked' : ''}> Boîtes d'objets (nitro, huile, bouclier)</label></div>`}
     <h3>TA VOITURE</h3>
     ${carPicker(carId)}
     <div class="row">
@@ -97,12 +134,13 @@ export function soloScreen(carId: number, trackId: string, laps: number, bots: n
   </div>`;
 }
 
-export function lobbyScreen(room: RoomInfo, myId: string): string {
+export function lobbyScreen(room: RoomInfo, myId: string, myCustom: TrackDef | null): string {
   const me = room.players.find((p) => p.id === myId);
   const host = !!me?.host;
   const link = `${location.origin}/?salle=${room.code}`;
   const taken = new Set(room.players.filter((p) => p.id !== myId).map((p) => p.carId));
-  const track = TRACKS.find((t) => t.id === room.trackId);
+  const track = TRACKS.find((t) => t.id === room.trackId) ?? room.custom;
+  const customOpt = room.custom ?? myCustom;
   const players = room.players
     .map(
       (p) => `<div class="player" style="--c:${CARS[p.carId]?.color}">
@@ -116,11 +154,12 @@ export function lobbyScreen(room: RoomInfo, myId: string): string {
     : '';
   const settings = host
     ? `<div class="row">
-        <label class="field">Circuit<select data-a="track">${trackOptions(room.trackId)}</select></label>
+        <label class="field">Circuit<select data-a="track">${trackOptions(room.trackId, customOpt)}</select></label>
         <label class="field">Tours<select data-a="laps">${lapOptions(room.laps)}</select></label>
         <label class="field">Bots<select data-a="bots">${botOptions(room.bots, MAX_PLAYERS - room.players.length)}</select></label>
-      </div>`
-    : `<p class="hint">${esc(track?.name ?? '')} · ${room.laps} tour${room.laps > 1 ? 's' : ''} · l'hôte lance la course</p>`;
+      </div>
+      <div class="row"><label class="check"><input type="checkbox" data-a="items" ${room.items ? 'checked' : ''}> Boîtes d'objets</label></div>`
+    : `<p class="hint">${esc(track?.name ?? '')} · ${room.laps} tour${room.laps > 1 ? 's' : ''} · objets ${room.items ? 'oui' : 'non'} · l'hôte lance la course</p>`;
   return `<div class="screen wide">
     <h2>SALLE</h2>
     <div class="code-box">${room.code}</div>
@@ -168,5 +207,28 @@ export function resultsScreen(state: RaceState, myId: string, online: boolean): 
         ? '<p class="hint">Retour au salon dans quelques secondes…</p>'
         : '<div class="row"><button class="secondary" data-a="menu">MENU</button><button data-a="again">REJOUER</button></div>'
     }
+  </div>`;
+}
+
+export function recordsScreen(trackId: string, records: LapRecord[] | null, mine: string): string {
+  const tabs = TRACKS.map(
+    (t) => `<button class="${t.id === trackId ? '' : 'secondary'}" data-a="tab" data-track="${t.id}">${esc(t.name)}</button>`,
+  ).join('');
+  const rows =
+    records === null
+      ? '<p class="hint">Chargement…</p>'
+      : records.length === 0
+        ? '<p class="hint">Aucun temps pour l\'instant. À toi de jouer !</p>'
+        : `<table class="results">${records
+            .map(
+              (r, i) => `<tr class="${r.name === mine ? 'me' : ''}"><td class="place">${i + 1}</td><td>${carThumb(r.carId, 0.6)}</td>
+              <td>${esc(r.name)}${r.online ? ' <small class="tag">EN LIGNE</small>' : ''}</td><td class="t">${formatTime(r.ticks)}<br><small>${esc(r.at)}</small></td></tr>`,
+            )
+            .join('')}</table>`;
+  return `<div class="screen wide">
+    <h2>MEILLEURS TOURS</h2>
+    <div class="row">${tabs}</div>
+    ${rows}
+    <div class="row"><button class="secondary" data-a="back">RETOUR</button></div>
   </div>`;
 }

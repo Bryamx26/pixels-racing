@@ -1,7 +1,7 @@
 import { KERB_WIDTH, ROAD_WIDTH, WALL_DIST } from '../../shared/constants';
 import { mulberry32 } from '../../shared/math';
-import { gridPose } from '../../shared/race/race';
-import { nearestSample, pointAt, type Track } from '../../shared/track/track';
+import { PIT, gridPose } from '../../shared/race/race';
+import { nearestSample, pointAt, wrapIdx, type Track } from '../../shared/track/track';
 
 /** Trace la polyligne fermée de l'axe décalé latéralement. */
 function loopPath(ctx: CanvasRenderingContext2D, t: Track, offset = 0, step = 1): void {
@@ -12,6 +12,84 @@ function loopPath(ctx: CanvasRenderingContext2D, t: Track, offset = 0, step = 1)
     else ctx.lineTo(x, y);
   }
   ctx.closePath();
+}
+
+/** Trace une portion ouverte de l'axe (échantillons from..to, peut déborder du tour). */
+function segPath(ctx: CanvasRenderingContext2D, t: Track, from: number, to: number, offset = 0): void {
+  ctx.beginPath();
+  for (let i = from; i <= to; i++) {
+    const [x, y] = pointAt(t, i, offset);
+    if (i === from) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  }
+}
+
+/** Chaussée d'une portion : vibreurs, bitume, lignes de voies. */
+function roadPortion(ctx: CanvasRenderingContext2D, t: Track, from: number, to: number, asphalt: CanvasPattern): void {
+  ctx.lineCap = 'butt';
+  ctx.lineJoin = 'round';
+  ctx.lineWidth = ROAD_WIDTH + KERB_WIDTH * 2;
+  ctx.strokeStyle = '#f2f2f2';
+  segPath(ctx, t, from, to);
+  ctx.stroke();
+  ctx.setLineDash([12, 12]);
+  ctx.strokeStyle = '#d8262e';
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.lineWidth = ROAD_WIDTH;
+  ctx.strokeStyle = asphalt;
+  ctx.stroke();
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = 'rgba(240, 240, 240, 0.6)';
+  ctx.setLineDash([14, 18]);
+  for (const side of [-1, 0, 1]) {
+    segPath(ctx, t, from, to, (side * ROAD_WIDTH) / 4);
+    ctx.stroke();
+  }
+  ctx.setLineDash([]);
+}
+
+/** Pont : tablier du passage du dessus, dessiné par-dessus les voitures du dessous. */
+export interface BridgeArt {
+  canvas: HTMLCanvasElement;
+  ox: number;
+  oy: number;
+}
+
+export function renderBridge(t: Track): BridgeArt | null {
+  if (!t.bridge) return null;
+  const [from, to] = t.bridge;
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (let i = from; i <= to; i++) {
+    minX = Math.min(minX, t.xs[i]);
+    maxX = Math.max(maxX, t.xs[i]);
+    minY = Math.min(minY, t.ys[i]);
+    maxY = Math.max(maxY, t.ys[i]);
+  }
+  const pad = ROAD_WIDTH + 40;
+  const ox = Math.floor(minX - pad), oy = Math.floor(minY - pad);
+  const c = document.createElement('canvas');
+  c.width = Math.ceil(maxX - minX + pad * 2);
+  c.height = Math.ceil(maxY - minY + pad * 2);
+  const ctx = c.getContext('2d')!;
+  ctx.translate(-ox, -oy);
+  // Ombre portée du tablier puis garde-corps en béton.
+  ctx.save();
+  ctx.translate(10, 14);
+  ctx.lineWidth = ROAD_WIDTH + KERB_WIDTH * 2 + 14;
+  ctx.strokeStyle = 'rgba(0,0,0,0.35)';
+  segPath(ctx, t, from, to);
+  ctx.stroke();
+  ctx.restore();
+  ctx.lineWidth = ROAD_WIDTH + KERB_WIDTH * 2 + 14;
+  ctx.strokeStyle = '#8e93a3';
+  segPath(ctx, t, from, to);
+  ctx.stroke();
+  ctx.lineWidth = ROAD_WIDTH + KERB_WIDTH * 2 + 6;
+  ctx.strokeStyle = '#5d6170';
+  ctx.stroke();
+  roadPortion(ctx, t, from, to, asphaltPattern(ctx));
+  return { canvas: c, ox, oy };
 }
 
 function hexToRgb(h: string): [number, number, number] {
@@ -114,6 +192,43 @@ export function renderTrack(t: Track): HTMLCanvasElement {
     ctx.stroke();
   }
   ctx.setLineDash([]);
+
+  // Passage du dessous d'un pont : redessiné par-dessus pour rester continu
+  // (le tablier du dessus est une image à part, affichée au-dessus des voitures).
+  if (t.under) roadPortion(ctx, t, t.under[0] - 6, t.under[1] + 6, asphaltPattern(ctx));
+
+  // Stands : bande hachurée jaune sur le bas-côté droit avant la ligne.
+  {
+    const mid = (PIT.minLat + PIT.maxLat) / 2;
+    ctx.lineCap = 'butt';
+    ctx.lineWidth = PIT.maxLat - PIT.minLat - 6;
+    ctx.strokeStyle = '#5b5e68';
+    segPath(ctx, t, t.n + PIT.from, t.n + PIT.to, mid);
+    ctx.stroke();
+    ctx.setLineDash([6, 6]);
+    ctx.strokeStyle = 'rgba(255, 204, 51, 0.55)';
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = '#ffcc33';
+    for (const off of [PIT.minLat + 3, PIT.maxLat - 3]) {
+      segPath(ctx, t, t.n + PIT.from, t.n + PIT.to, off);
+      ctx.stroke();
+    }
+    const k = wrapIdx(t, t.n + Math.round((PIT.from + PIT.to) / 2));
+    const [px, py] = pointAt(t, k, mid);
+    ctx.save();
+    ctx.translate(px, py);
+    ctx.rotate(Math.atan2(t.tys[k], t.txs[k]));
+    ctx.fillStyle = '#111';
+    ctx.font = 'bold 14px monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('STANDS', 1, 1);
+    ctx.fillStyle = '#ffcc33';
+    ctx.fillText('STANDS', 0, 0);
+    ctx.restore();
+  }
 
   // Damier de la ligne d'arrivée (échantillon 0) et cases de la grille.
   const ang = Math.atan2(t.tys[0], t.txs[0]);

@@ -2,6 +2,7 @@ import { COUNTDOWN_TICKS, DT } from '../../shared/constants';
 import { packInput, type CarInput, type PackedInput } from '../../shared/input';
 import { lerp, lerpAngle, wrapAngle } from '../../shared/math';
 import { draftFactor, stepCar, updateProgress, type CarBody } from '../../shared/cars/physics';
+import { carStats } from '../../shared/cars/stats';
 import type { RaceEvent, RaceState, Racer } from '../../shared/race/race';
 import { getTrack, type Track } from '../../shared/track/track';
 import type { ServerMsg } from '../../shared/net/protocol';
@@ -76,7 +77,8 @@ export class OnlineRace implements RaceView {
     // Réconciliation : on repart de l'état serveur et on rejoue les commandes non confirmées.
     this.history = this.history.filter((h) => h.seq > ack);
     const old = this.me;
-    const body: CarBody = { x: r!.x, y: r!.y, a: r!.a, vx: r!.vx, vy: r!.vy, w: r!.w, idx: r!.idx, prog: r!.prog };
+    const { x, y, a, vx, vy, w, boost, boostTicks, spin, damage, idx, prog } = r!;
+    const body: CarBody = { x, y, a, vx, vy, w, boost, boostTicks, spin, damage, idx, prog };
     let tick = state.tick;
     for (const h of this.history) {
       tick++;
@@ -103,9 +105,15 @@ export class OnlineRace implements RaceView {
   private draft = 0;
 
   private simulate(b: CarBody, input: CarInput): void {
-    const others = this.state.racers.filter((o) => o.id !== this.myId);
-    this.draft = draftFactor(b, others);
-    stepCar(b, input, this.track, DT, this.draft);
+    const st = this.state;
+    const me = st.racers.find((o) => o.id === this.myId);
+    const others = st.racers.filter((o) => o !== me);
+    this.draft = draftFactor(b, others, this.track.n);
+    stepCar(b, input, this.track, DT, {
+      draft: this.draft,
+      stats: carStats(me?.carId ?? 0),
+      damage: st.options.damage && (me?.shield ?? 0) <= 0,
+    });
     updateProgress(b, this.track);
   }
 
@@ -156,6 +164,10 @@ export class OnlineRace implements RaceView {
           vx: this.me.vx,
           vy: this.me.vy,
           w: this.me.w,
+          boost: this.me.boost,
+          boostTicks: this.me.boostTicks,
+          spin: this.me.spin,
+          damage: this.me.damage,
           draft: this.draft,
           prog: this.me.prog,
         };
