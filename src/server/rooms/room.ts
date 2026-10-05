@@ -212,6 +212,8 @@ function compactState(s: RaceState): RaceState {
       vx: round2(r.vx),
       vy: round2(r.vy),
       a: Math.round(r.a * 1e4) / 1e4,
+      w: Math.round(r.w * 1e4) / 1e4,
+      draft: round2(r.draft),
     })),
   };
 }

@@ -5,6 +5,7 @@ Jeu de course en pixel art vue du dessus, **multijoueur en ligne** dans le navig
 - 16 voitures (tirées de la planche de sprites), 2 circuits (Circuit Néon, Anneau du Lac).
 - Une voiture fait exactement **1/4 de la largeur de la chaussée** : quatre voitures de front, la piste est marquée en quatre voies.
 - Course solo contre 0 à 7 bots, ou salles privées en ligne par code (jusqu'à 8 pilotes, bots en option), lien d'invitation `/?salle=CODE`.
+- Conduite : rotation avec inertie, rayon de braquage selon la vitesse (sous-virage si on entre trop vite), roulis visible, dérapage au freinage à haute vitesse, **aspiration** derrière une voiture (plus d'accélération et de vitesse de pointe, pour tous, bots compris).
 - Serveur autoritaire 60 Hz ; voiture du joueur prédite localement, autres voitures interpolées ; reconnexion automatique (pilote auto pendant la coupure).
 - Mobile : boutons tactiles ◀ ▶ / GAZ / FREIN, accélération automatique en option, plein écran paysage, installable sur l'écran d'accueil.
 

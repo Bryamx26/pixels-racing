@@ -2,7 +2,7 @@
 import { CAR_WIDTH, ROAD_WIDTH, TICK_RATE, WALL_DIST } from '../src/shared/constants';
 import { packInput, unpackInput } from '../src/shared/input';
 import { wrapAngle } from '../src/shared/math';
-import { stepCar } from '../src/shared/cars/physics';
+import { draftFactor, stepCar } from '../src/shared/cars/physics';
 import { Race, gridPose, standings, formatTime } from '../src/shared/race/race';
 import { TRACKS } from '../src/shared/track/tracks';
 import { getTrack, wrapIdx } from '../src/shared/track/track';
@@ -103,6 +103,41 @@ test('freiner à grande vitesse fait déraper, freiner lentement non', () => {
   const c = gridPose(t, 1);
   for (let i = 0; i < 20; i++) stepCar(c, { throttle: 1, brake: 0, steer: 0 }, t, 1 / 60);
   assert(!stepCar(c, { throttle: 0, brake: 1, steer: 0.5 }, t, 1 / 60).drift, 'dérapage à basse vitesse');
+});
+
+test('la voiture met un instant à tourner (inertie) et sous-vire à pleine vitesse', () => {
+  const t = getTrack('neon');
+  const b = gridPose(t, 0);
+  for (let i = 0; i < 200; i++) stepCar(b, { throttle: 1, brake: 0, steer: 0 }, t, 1 / 60);
+  stepCar(b, { throttle: 1, brake: 0, steer: 1 }, t, 1 / 60);
+  const first = Math.abs(b.w);
+  for (let i = 0; i < 20; i++) stepCar(b, { throttle: 1, brake: 0, steer: 1 }, t, 1 / 60);
+  assert(first < Math.abs(b.w) * 0.4, `rotation immédiate ${first.toFixed(2)} vs ${b.w.toFixed(2)}`);
+  const sp = Math.hypot(b.vx, b.vy);
+  assert(Math.abs(b.w) * sp <= 1050 * 1.05, `accélération latérale ${(Math.abs(b.w) * sp).toFixed(0)}`);
+});
+
+test("l'aspiration fait aller plus vite derrière une voiture", () => {
+  const t = getTrack('neon');
+  const run = (withLeader: boolean) => {
+    const me = gridPose(t, 0);
+    const lead = { ...me, x: me.x + Math.cos(me.a) * 120, y: me.y + Math.sin(me.a) * 120 };
+    let total = 0;
+    for (let i = 0; i < 90; i++) {
+      // Meneur imaginaire toujours 120 devant, à la même vitesse.
+      lead.x = me.x + Math.cos(me.a) * 120;
+      lead.y = me.y + Math.sin(me.a) * 120;
+      lead.vx = me.vx;
+      lead.vy = me.vy;
+      const d = withLeader ? draftFactor(me, [lead]) : 0;
+      if (withLeader && i >= 60) total += d;
+      stepCar(me, { throttle: 1, brake: 0, steer: 0 }, t, 1 / 60, d);
+    }
+    return { speed: Math.hypot(me.vx, me.vy), draft: total / 30 };
+  };
+  const solo = run(false), drafted = run(true);
+  assert(drafted.draft > 0.4, `aspiration ${drafted.draft.toFixed(2)}`);
+  assert(drafted.speed > solo.speed + 8, `${drafted.speed.toFixed(0)} vs ${solo.speed.toFixed(0)}`);
 });
 
 test('les commandes réseau se décodent et sont bornées', () => {

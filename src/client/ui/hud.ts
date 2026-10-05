@@ -78,6 +78,9 @@ export class Hud {
       c.className = 'hud-center' + (this.flash.small ? ' small' : '');
       c.innerHTML =
         (this.flash.text === 'GO !' ? '<div class="lights go"><i></i><i></i><i></i></div>' : '') + this.flash.text;
+    } else if (me && me.draft > 0.3 && state.phase === 'race') {
+      c.className = 'hud-center small';
+      c.textContent = 'ASPIRATION !';
     } else if (this.wrongWay > 0.8) {
       c.className = 'hud-center';
       c.textContent = 'MAUVAIS SENS !';

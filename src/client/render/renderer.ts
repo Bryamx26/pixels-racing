@@ -148,15 +148,20 @@ export class Renderer {
     const ctx = this.ctx;
     const x = Math.round(r.x - cx), y = Math.round(r.y - cy);
     if (x < -60 || y < -60 || x > this.canvas.width + 60 || y > this.canvas.height + 60) return;
+    // Roulis : en virage, la caisse penche vers l'extérieur (sprite décalé, ombre étirée).
+    const vf = r.vx * Math.cos(r.a) + r.vy * Math.sin(r.a);
+    const roll = Math.max(-1, Math.min(1, (vf * (r.w ?? 0)) / 1050));
+    const rx = Math.sin(r.a) * roll, ry = -Math.cos(r.a) * roll;
     ctx.save();
     ctx.translate(x, y);
     // Ombre portée.
     ctx.save();
-    ctx.translate(3, 4);
+    ctx.translate(3 - rx * 3, 4 - ry * 3);
     ctx.rotate(r.a);
     ctx.fillStyle = 'rgba(0,0,0,0.35)';
     ctx.fillRect(-CAR_LENGTH / 2 + 2, -CAR_WIDTH / 2 + 1, CAR_LENGTH - 4, CAR_WIDTH - 2);
     ctx.restore();
+    ctx.translate(Math.round(rx * 1.5), Math.round(ry * 1.5));
     ctx.rotate(r.a);
     const col = r.carId % 4, row = Math.floor(r.carId / 4);
     if (atlas.complete && atlas.naturalWidth) {
@@ -182,6 +187,20 @@ export class Renderer {
       this.lastRear.set(r.id, rear);
       if (r.offroad && speed > 60 && Math.random() < 0.6) {
         this.spawn(bx, by, Math.random() < 0.5 ? '#6b5a2e' : '#2d6a2a', 1, 40, 0.5, 3);
+      }
+      // Aspiration : filets d'air blancs qui filent le long de la voiture.
+      if ((r.draft ?? 0) > 0.15 && Math.random() < r.draft) {
+        const side = (Math.random() - 0.5) * CAR_WIDTH * 1.6;
+        this.particles.push({
+          x: r.x + cos * CAR_LENGTH * 0.5 - sin * side,
+          y: r.y + sin * CAR_LENGTH * 0.5 + cos * side,
+          vx: -cos * 260 + r.vx * 0.2,
+          vy: -sin * 260 + r.vy * 0.2,
+          life: 0.18,
+          max: 0.18,
+          color: 'rgba(255,255,255,0.8)',
+          size: 2,
+        });
       }
       const skidding = !r.offroad && (slip > 70 || r.drift);
       if (skidding && Math.random() < 0.25) this.spawn(bx, by, '#cfcfd6', 1, 25, 0.6, 3);

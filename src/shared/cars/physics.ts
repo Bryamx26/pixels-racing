@@ -11,6 +11,8 @@ export interface CarBody {
   a: number;
   vx: number;
   vy: number;
+  /** Vitesse de rotation (rad/s) : la voiture met un instant à s'inscrire en virage. */
+  w: number;
   /** Échantillon de piste le plus proche. */
   idx: number;
   /** Progression « déroulée » en échantillons : tours × n + idx (négative sur la grille). */
@@ -30,7 +32,19 @@ export const CAR = {
   driftGrip: 2.2,
   /** Freiner au-dessus de cette vitesse fait déraper la voiture. */
   driftSpeed: 250,
-  turnRate: 3.1,
+  /** Empattement : rayon de braquage d'un modèle « bicyclette ». */
+  wheelbase: 36,
+  /** Angle de braquage maximal des roues (rad), réduit à haute vitesse. */
+  maxSteer: 0.6,
+  /** Accélération latérale maximale avant que les pneus glissent (sous-virage). */
+  lateralGrip: 1050,
+  /** Réactivité du châssis : vitesse à laquelle la rotation rejoint la consigne. */
+  yawResponse: 9,
+  /** Aspiration : gain d'accélération et de vitesse de pointe derrière une voiture. */
+  draftAccel: 0.45,
+  draftTopSpeed: 0.1,
+  /** Zone d'aspiration derrière une voiture (distance, largeur). */
+  draftLength: 280,
   grassMaxSpeed: 200,
   grassDrag: 3,
 };
@@ -54,6 +68,8 @@ export function stepCar(
   inp: CarInput,
   track: Track,
   dt: number,
+  /** Aspiration reçue (0..1), calculée par draftFactor. */
+  draft = 0,
 ): { wall: boolean; offroad: boolean; drift: boolean } {
   const cos = Math.cos(b.a), sin = Math.sin(b.a);
   let vf = b.vx * cos + b.vy * sin;
@@ -67,30 +83,33 @@ export function stepCar(
     if (vf > 10) vf = Math.max(0, vf - CAR.brake * inp.brake * dt);
     else vf = Math.max(-CAR.reverseMax, vf - CAR.reverseAccel * inp.brake * dt);
   } else if (inp.throttle > 0.05) {
-    const r = clamp(vf / CAR.maxSpeed, 0, 1);
-    vf += CAR.accel * inp.throttle * (1 - r * r) * dt;
+    const top = CAR.maxSpeed * (1 + CAR.draftTopSpeed * draft);
+    const r = clamp(vf / top, 0, 1);
+    vf += CAR.accel * (1 + CAR.draftAccel * draft) * inp.throttle * (1 - r * r) * dt;
   }
-  // Frottements : roulement constant + traînée proportionnelle.
+  // Frottements : roulement constant + traînée proportionnelle (moins d'air dans l'aspiration).
   const roll = Math.min(Math.abs(vf), CAR.rolling * dt);
   vf -= Math.sign(vf) * roll;
-  vf *= 1 - CAR.drag * dt;
+  vf *= 1 - CAR.drag * (1 - 0.6 * draft) * dt;
   if (offroad && Math.abs(vf) > CAR.grassMaxSpeed) vf -= (vf - Math.sign(vf) * CAR.grassMaxSpeed) * CAR.grassDrag * dt;
 
-  // Direction : rien à l'arrêt, un peu moins vive à pleine vitesse, inversée en marche arrière.
+  // Direction (modèle bicyclette) : le rayon de braquage dépend de l'angle des roues,
+  // qui se réduit à haute vitesse ; les pneus limitent l'accélération latérale
+  // (la voiture élargit sa trajectoire si on arrive trop vite : sous-virage).
   const sp = Math.abs(vf);
-  const turn =
-    inp.steer *
-    CAR.turnRate *
-    clamp(sp / 90, 0, 1) *
-    (1 - 0.3 * clamp(sp / CAR.maxSpeed, 0, 1)) *
-    (drift ? 1.35 : 1) *
-    Math.sign(vf);
+  const steerAngle = inp.steer * CAR.maxSteer * (1 - 0.45 * clamp(sp / CAR.maxSpeed, 0, 1));
+  let target = (vf * Math.tan(steerAngle)) / CAR.wheelbase;
+  const gripMul = drift ? 1.6 : offroad ? 0.6 : 1;
+  const maxYaw = (CAR.lateralGrip * gripMul) / Math.max(sp, 1);
+  target = clamp(target, -maxYaw, maxYaw) * (drift ? 1.3 : 1);
+  // Inertie : la rotation rejoint la consigne progressivement (et plus lentement en glisse).
+  b.w += (target - b.w) * Math.min(1, CAR.yawResponse * (drift ? 0.5 : 1) * dt);
   // Adhérence : la vitesse latérale disparaît vite, sauf en dérapage.
   vr *= Math.exp(-(drift ? CAR.driftGrip : offroad ? CAR.grip * 0.6 : CAR.grip) * dt);
 
   b.vx = vf * cos - vr * sin;
   b.vy = vf * sin + vr * cos;
-  b.a += turn * dt;
+  b.a += b.w * dt;
   b.x += b.vx * dt;
   b.y += b.vy * dt;
 
@@ -106,6 +125,7 @@ export function stepCar(
     b.y -= ny * over;
     const vn = b.vx * nx + b.vy * ny;
     if (vn > 0) {
+      b.w *= 0.5;
       b.vx -= nx * vn * 1.3;
       b.vy -= ny * vn * 1.3;
       b.vx *= 0.92;
@@ -113,6 +133,31 @@ export function stepCar(
     }
   }
   return { wall, offroad, drift };
+}
+
+/**
+ * Aspiration (0..1) : la voiture `b` roule dans le sillage d'une autre, juste devant elle,
+ * dans le même axe. Plus elle est proche (et rapide), plus l'effet est fort.
+ */
+export function draftFactor(b: CarBody, others: readonly CarBody[]): number {
+  const sp = Math.hypot(b.vx, b.vy);
+  if (sp < 150) return 0;
+  const fx = b.vx / sp, fy = b.vy / sp;
+  let best = 0;
+  for (const o of others) {
+    if (o === b) continue;
+    const dx = o.x - b.x, dy = o.y - b.y;
+    const ahead = dx * fx + dy * fy;
+    if (ahead < CAR_LENGTH * 0.8 || ahead > CAR.draftLength) continue;
+    const side = Math.abs(-dx * fy + dy * fx);
+    if (side > CAR_WIDTH * 1.1) continue;
+    // Le meneur doit aller à peu près dans le même sens et assez vite.
+    const osp = Math.hypot(o.vx, o.vy);
+    if (osp < 120 || (o.vx * fx + o.vy * fy) / osp < 0.8) continue;
+    const f = (1 - (ahead - CAR_LENGTH) / CAR.draftLength) * (1 - side / (CAR_WIDTH * 1.4));
+    best = Math.max(best, clamp(f, 0, 1));
+  }
+  return best;
 }
 
 /** Met à jour la progression déroulée à partir du nouvel échantillon. */

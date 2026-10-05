@@ -1,6 +1,6 @@
 import { CAR_LENGTH, COUNTDOWN_TICKS, DT, FINISH_GRACE_TICKS, ROAD_WIDTH, TICK_RATE } from '../constants';
 import { NO_INPUT, type CarInput } from '../input';
-import { collideCars, stepCar, updateProgress, type CarBody } from '../cars/physics';
+import { collideCars, draftFactor, stepCar, updateProgress, type CarBody } from '../cars/physics';
 import { getTrack, pointAt, wrapIdx, type Track } from '../track/track';
 import { BotDriver } from './bot';
 
@@ -18,6 +18,8 @@ export interface Racer extends CarBody {
   /** Pour les effets : dans l'herbe / en dérapage ce tick-ci. */
   offroad: boolean;
   drift: boolean;
+  /** Aspiration reçue (0..1). */
+  draft: number;
 }
 
 export type RacePhase = 'countdown' | 'race' | 'done';
@@ -53,7 +55,7 @@ export function gridPose(track: Track, slot: number): CarBody {
   const idx = wrapIdx(track, -back);
   // Voies 1 et 4 (une voiture = une voie).
   const [x, y] = pointAt(track, idx, (side * ROAD_WIDTH * 3) / 8);
-  return { x, y, a: Math.atan2(track.tys[idx], track.txs[idx]), vx: 0, vy: 0, idx, prog: -back };
+  return { x, y, a: Math.atan2(track.tys[idx], track.txs[idx]), vx: 0, vy: 0, w: 0, idx, prog: -back };
 }
 
 /** Classement : arrivés dans l'ordre d'arrivée, puis les autres selon leur progression. */
@@ -107,6 +109,7 @@ export class Race {
         finishTick: -1,
         offroad: false,
         drift: false,
+        draft: 0,
       })),
     };
     entrants.forEach((e, i) => this.drivers.set(e.id, new BotDriver(seed * 97 + i * 13)));
@@ -129,10 +132,12 @@ export class Race {
       return events;
     }
     const t = this.track;
+    // Aspiration calculée sur les positions de début de tick (même règle pour tout le monde).
+    for (const r of s.racers) r.draft = draftFactor(r, s.racers);
     for (const r of s.racers) {
       const auto = r.bot || r.finishTick >= 0 || autopilot.has(r.id);
       const inp = auto ? this.drivers.get(r.id)!.drive(r, t) : (inputs.get(r.id) ?? NO_INPUT);
-      const res = stepCar(r, inp, t, DT);
+      const res = stepCar(r, inp, t, DT, r.draft);
       updateProgress(r, t);
       r.offroad = res.offroad;
       r.drift = res.drift;

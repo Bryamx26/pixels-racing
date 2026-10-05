@@ -1,7 +1,7 @@
 import { COUNTDOWN_TICKS, DT } from '../../shared/constants';
 import { packInput, type CarInput, type PackedInput } from '../../shared/input';
 import { lerp, lerpAngle, wrapAngle } from '../../shared/math';
-import { stepCar, updateProgress, type CarBody } from '../../shared/cars/physics';
+import { draftFactor, stepCar, updateProgress, type CarBody } from '../../shared/cars/physics';
 import type { RaceEvent, RaceState, Racer } from '../../shared/race/race';
 import { getTrack, type Track } from '../../shared/track/track';
 import type { ServerMsg } from '../../shared/net/protocol';
@@ -76,7 +76,7 @@ export class OnlineRace implements RaceView {
     // Réconciliation : on repart de l'état serveur et on rejoue les commandes non confirmées.
     this.history = this.history.filter((h) => h.seq > ack);
     const old = this.me;
-    const body: CarBody = { x: r!.x, y: r!.y, a: r!.a, vx: r!.vx, vy: r!.vy, idx: r!.idx, prog: r!.prog };
+    const body: CarBody = { x: r!.x, y: r!.y, a: r!.a, vx: r!.vx, vy: r!.vy, w: r!.w, idx: r!.idx, prog: r!.prog };
     let tick = state.tick;
     for (const h of this.history) {
       tick++;
@@ -99,8 +99,13 @@ export class OnlineRace implements RaceView {
     this.meTick = tick;
   }
 
+  /** Aspiration prédite (les autres voitures sont prises à leur dernière position connue). */
+  private draft = 0;
+
   private simulate(b: CarBody, input: CarInput): void {
-    stepCar(b, input, this.track, DT);
+    const others = this.state.racers.filter((o) => o.id !== this.myId);
+    this.draft = draftFactor(b, others);
+    stepCar(b, input, this.track, DT, this.draft);
     updateProgress(b, this.track);
   }
 
@@ -150,6 +155,8 @@ export class OnlineRace implements RaceView {
           a: lerpAngle(this.prevMe.a, this.me.a, al) + this.fix.a,
           vx: this.me.vx,
           vy: this.me.vy,
+          w: this.me.w,
+          draft: this.draft,
           prog: this.me.prog,
         };
       }
