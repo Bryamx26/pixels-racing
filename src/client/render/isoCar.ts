@@ -1,153 +1,51 @@
 import { CARS, CAR_CELL_H, CAR_CELL_W } from '../../shared/cars/carAtlas';
+import { CAR_WIDTH } from '../../shared/constants';
+import { carClass } from '../../shared/cars/stats';
 import atlasUrl from '../assets/voitures.png';
 import { ISO, ISO_Z } from './iso';
+
+/**
+ * Voitures en voxels : chaque voiture est un modèle 3D en petits cubes (caisse, habitacle
+ * vitré, roues, phares, aileron…), dont la silhouette dépend de sa famille (coupé, bolide
+ * bas, citadine nerveuse, gros 4×4) et les couleurs viennent de son dessin sur la planche.
+ * Le modèle est rendu (tampon de profondeur + éclairage) sous 48 angles, à la demande.
+ */
 
 export const atlas = new Image();
 atlas.src = atlasUrl;
 
-/**
- * Voitures en isométrique par empilement de tranches (« sprite stacking ») : chaque voiture
- * de la planche vue de dessus est découpée en tranches (roues, caisse, vitres, toit) que l'on
- * dessine l'une au-dessus de l'autre, tournées selon le cap puis projetées. On obtient une
- * vraie voiture en volume, visible sous tous les angles, qui garde le dessin d'origine.
- */
-interface Slice {
-  img: HTMLCanvasElement;
-  /** Hauteur (unités monde) de la tranche. */
-  z: number;
-}
-
-/** Hauteur totale d'une voiture (unités monde). */
 export const CAR_HEIGHT = 17;
-const BODY_LOW = 3;
-const BODY_TOP = 10;
+const ANGLES = 48;
+const SW = 76, SH = 64;
+/** Point au sol sous le centre de la voiture, dans le sprite. */
+const AX = SW / 2, AY = 42;
 
-const cache = new Map<number, Slice[]>();
+type RGB = [number, number, number];
+interface Voxel {
+  u: number;
+  v: number;
+  z: number;
+  c: RGB;
+  /** Normale (somme des faces à l'air libre), repère voiture. */
+  n: [number, number, number];
+}
 
-function canvas(w = CAR_CELL_W, h = CAR_CELL_H): [HTMLCanvasElement, CanvasRenderingContext2D] {
+// ---------- Couleurs tirées du dessin de la voiture ----------
+function spritePixels(carId: number): Uint8ClampedArray | null {
+  if (!atlas.complete || !atlas.naturalWidth) return null;
   const c = document.createElement('canvas');
-  c.width = w;
-  c.height = h;
-  return [c, c.getContext('2d')!];
+  c.width = CAR_CELL_W;
+  c.height = CAR_CELL_H;
+  const g = c.getContext('2d')!;
+  g.drawImage(atlas, (carId % 4) * CAR_CELL_W, Math.floor(carId / 4) * CAR_CELL_H, CAR_CELL_W, CAR_CELL_H, 0, 0, CAR_CELL_W, CAR_CELL_H);
+  return g.getImageData(0, 0, CAR_CELL_W, CAR_CELL_H).data;
 }
 
-function fromData(d: ImageData): HTMLCanvasElement {
-  const [c, g] = canvas(d.width, d.height);
-  g.putImageData(d, 0, 0);
-  return c;
-}
-
-/** Découpe une voiture de l'atlas en tranches. */
-function buildSlices(carId: number): Slice[] {
-  const W = CAR_CELL_W, H = CAR_CELL_H;
-  const [, g] = canvas();
-  g.drawImage(atlas, (carId % 4) * W, Math.floor(carId / 4) * H, W, H, 0, 0, W, H);
-  const src = g.getImageData(0, 0, W, H);
-  const p = src.data;
-  const alpha = (x: number, y: number) => (x < 0 || y < 0 || x >= W || y >= H ? 0 : p[(y * W + x) * 4 + 3]);
-
-  // Habitacle : repéré par les vitres (pixels sombres et bleutés) au centre de la voiture.
-  const cy = H / 2;
-  let gx0 = W, gx1 = -1;
-  for (let y = Math.floor(cy - 5); y <= Math.ceil(cy + 5); y++) {
-    for (let x = 0; x < W; x++) {
-      const o = (y * W + x) * 4;
-      if (p[o + 3] < 200) continue;
-      const r = p[o], gg = p[o + 1], b = p[o + 2];
-      if (r + gg + b < 150 && b >= r && Math.abs(x - W / 2) < W * 0.32) {
-        gx0 = Math.min(gx0, x);
-        gx1 = Math.max(gx1, x);
-      }
-    }
-  }
-  if (gx1 - gx0 < 8) {
-    gx0 = Math.round(W * 0.32);
-    gx1 = Math.round(W * 0.66);
-  }
-  // Largeur de la caisse à hauteur de l'habitacle.
-  let y0 = H, y1 = -1;
-  for (let y = 0; y < H; y++) {
-    if (alpha(Math.round((gx0 + gx1) / 2), y) > 128) {
-      y0 = Math.min(y0, y);
-      y1 = Math.max(y1, y);
-    }
-  }
-  const inCabin = (x: number, y: number) => x >= gx0 && x <= gx1 && y >= y0 + 3 && y <= y1 - 3 && alpha(x, y) > 128;
-
-  const tinted = (k: number, only?: (x: number, y: number) => boolean) => {
-    const d = new ImageData(W, H);
-    for (let y = 0; y < H; y++) {
-      for (let x = 0; x < W; x++) {
-        const o = (y * W + x) * 4;
-        if (p[o + 3] < 100 || (only && !only(x, y))) continue;
-        d.data[o] = Math.min(255, p[o] * k);
-        d.data[o + 1] = Math.min(255, p[o + 1] * k);
-        d.data[o + 2] = Math.min(255, p[o + 2] * k);
-        d.data[o + 3] = 255;
-      }
-    }
-    return fromData(d);
-  };
-
-  // Roues et soubassement.
-  const [wheels, wg] = canvas();
-  let bx0 = W, bx1 = -1;
-  for (let x = 0; x < W; x++) if (alpha(x, Math.round(cy)) > 128) (bx0 = Math.min(bx0, x)), (bx1 = Math.max(bx1, x));
-  const len = bx1 - bx0;
-  wg.fillStyle = '#16161c';
-  wg.fillRect(bx0 + 3, y0 + 2, len - 6, y1 - y0 - 4);
-  for (const fx of [0.2, 0.78]) {
-    for (const side of [y0 - 1, y1 - 4]) {
-      wg.fillStyle = '#0c0c10';
-      wg.fillRect(Math.round(bx0 + len * fx - 5), side, 10, 6);
-      wg.fillStyle = '#5c5c66';
-      wg.fillRect(Math.round(bx0 + len * fx - 2), side + 2, 4, 2);
-    }
-  }
-
-  // Vitres latérales de l'habitacle.
-  const [glass, gl] = canvas();
-  gl.fillStyle = '#1b1f38';
-  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (inCabin(x, y)) gl.fillRect(x, y, 1, 1);
-  const [glassHi, gh] = canvas();
-  gh.drawImage(glass, 0, 0);
-  gh.globalCompositeOperation = 'source-atop';
-  gh.fillStyle = '#5c7ab8';
-  gh.fillRect(0, 0, W, H);
-
-  // Flancs : couleur principale de la caisse, unie, avec un liseré sombre au bord (les
-  // tranches tirées du dessin du dessus feraient des rayures sur les côtés).
-  const side = (k: number) => {
-    const [cr, cg, cb] = mainColor(p);
-    const d = new ImageData(W, H);
-    for (let y = 0; y < H; y++) {
-      for (let x = 0; x < W; x++) {
-        if (alpha(x, y) < 100) continue;
-        const edge = alpha(x - 1, y) < 100 || alpha(x + 1, y) < 100 || alpha(x, y - 1) < 100 || alpha(x, y + 1) < 100;
-        const o = (y * W + x) * 4;
-        const e = edge ? 0.55 : 1;
-        d.data[o] = cr * k * e;
-        d.data[o + 1] = cg * k * e;
-        d.data[o + 2] = cb * k * e;
-        d.data[o + 3] = 255;
-      }
-    }
-    return fromData(d);
-  };
-
-  const slices: Slice[] = [];
-  for (let z = 0; z < BODY_LOW; z += 1 / ISO_Z) slices.push({ img: wheels, z });
-  const dark = side(0.5), mid = side(0.7), light = tinted(0.85);
-  for (let z = BODY_LOW; z < BODY_TOP; z += 1 / ISO_Z) slices.push({ img: z < BODY_TOP - 3 ? dark : mid, z });
-  slices.push({ img: light, z: BODY_TOP });
-  slices.push({ img: tinted(1), z: BODY_TOP + 1 / ISO_Z });
-  for (let z = BODY_TOP + 2 / ISO_Z; z < CAR_HEIGHT - 1; z += 1 / ISO_Z) slices.push({ img: z > CAR_HEIGHT - 3 ? glassHi : glass, z });
-  slices.push({ img: tinted(1.12, inCabin), z: CAR_HEIGHT - 1 });
-  return slices;
-}
-
-/** Couleur dominante de la carrosserie (pixels saturés les plus fréquents). */
-function mainColor(p: Uint8ClampedArray): [number, number, number] {
+/** Les deux couleurs saturées les plus présentes (carrosserie, puis accent). */
+function palette(carId: number): [RGB, RGB] {
+  const fallback = parseHex(CARS[carId]?.color ?? '#888');
+  const p = spritePixels(carId);
+  if (!p) return [fallback, [240, 240, 240]];
   const bins = new Map<number, [number, number, number, number]>();
   for (let o = 0; o < p.length; o += 4) {
     if (p[o + 3] < 200) continue;
@@ -162,17 +60,212 @@ function mainColor(p: Uint8ClampedArray): [number, number, number] {
     e[3]++;
     bins.set(key, e);
   }
-  let best: [number, number, number, number] = [150, 150, 160, 1];
-  for (const e of bins.values()) if (e[3] > best[3]) best = e;
-  return [best[0] / best[3], best[1] / best[3], best[2] / best[3]];
+  const sorted = [...bins.values()].sort((a, b) => b[3] - a[3]).map((e) => [e[0] / e[3], e[1] / e[3], e[2] / e[3]] as RGB);
+  const main = sorted[0] ?? fallback;
+  const dist = (a: RGB, b: RGB) => Math.abs(a[0] - b[0]) + Math.abs(a[1] - b[1]) + Math.abs(a[2] - b[2]);
+  const accent = sorted.find((c) => dist(c, main) > 120) ?? [240, 240, 240];
+  return [main, accent];
 }
 
-function slicesFor(carId: number): Slice[] | null {
+function parseHex(h: string): RGB {
+  const v = parseInt(h.slice(1), 16);
+  return [(v >> 16) & 255, (v >> 8) & 255, v & 255];
+}
+
+// ---------- Modèle ----------
+interface Shape {
+  len: number;
+  /** Haut de la caisse, avant (capot) et arrière. */
+  body: number;
+  /** Habitacle : arrière, avant (à la base), hauteur du toit, pentes du pare-brise et de la lunette. */
+  cabRear: number;
+  cabFront: number;
+  roof: number;
+  slopeF: number;
+  slopeR: number;
+  wheelR: number;
+  clearance: number;
+  spoiler: boolean;
+}
+
+function shapeFor(carId: number): Shape {
+  if (carId === 12) {
+    // Titan : le monster truck de la planche.
+    return { len: 46, body: 13, cabRear: -12, cabFront: 6, roof: 19, slopeF: 0.8, slopeR: 0.3, wheelR: 7, clearance: 7, spoiler: false };
+  }
+  switch (carClass(carId).id) {
+    case 'vitesse':
+      return { len: 50, body: 7, cabRear: -9, cabFront: 5, roof: 12, slopeF: 1.6, slopeR: 1.4, wheelR: 4.5, clearance: 2, spoiler: true };
+    case 'agile':
+      return { len: 44, body: 8, cabRear: -12, cabFront: 7, roof: 14, slopeF: 1.2, slopeR: 0.7, wheelR: 4.5, clearance: 2, spoiler: false };
+    case 'lourde':
+      return { len: 50, body: 10, cabRear: -21, cabFront: 9, roof: 17, slopeF: 1.0, slopeR: 0.15, wheelR: 5.5, clearance: 3, spoiler: false };
+    default:
+      return { len: 50, body: 8, cabRear: -12, cabFront: 7, roof: 14, slopeF: 1.3, slopeR: 0.9, wheelR: 4.5, clearance: 2, spoiler: carId % 2 === 0 };
+  }
+}
+
+function buildModel(carId: number): Voxel[] {
+  const s = shapeFor(carId);
+  const [main, accent] = palette(carId);
+  const lum = (c: RGB) => c[0] * 0.3 + c[1] * 0.59 + c[2] * 0.11;
+  const stripes = carId % 3 === 0 && Math.abs(lum(accent) - lum(main)) > 60;
+  const half = s.len / 2;
+  const hw = CAR_WIDTH / 2 - 2;
+  const dark: RGB = [26, 26, 32];
+  const glass: RGB = [34, 46, 82];
+  const glassHi: RGB = [96, 132, 196];
+  const tyre: RGB = [20, 20, 24];
+  const rim: RGB = [184, 188, 200];
+  const wheelU = [half - 9, -half + 9];
+
+  const bodyTop = (u: number) => s.clearance + s.body - (u > half - 9 ? (u - (half - 9)) * 0.45 : 0) - (u < -half + 3 ? 1 : 0);
+  const bodyHalf = (u: number) => hw - Math.max(0, Math.abs(u) - (half - 4)) * 1.6;
+
+  const at = (u: number, v: number, z: number): RGB | null => {
+    // Roues (dépassent légèrement de la caisse).
+    for (const wu of wheelU) {
+      const d2 = (u - wu) ** 2 + (z - s.wheelR) ** 2;
+      if (d2 <= s.wheelR * s.wheelR && Math.abs(v) >= hw - 3 && Math.abs(v) <= hw + 1) {
+        return Math.abs(v) === hw + 1 && d2 <= (s.wheelR * 0.5) ** 2 ? rim : tyre;
+      }
+    }
+    if (Math.abs(u) > half) return null;
+    const top = bodyTop(u);
+    const bh = bodyHalf(u);
+    // Caisse.
+    if (z >= s.clearance && z <= top && Math.abs(v) <= bh) {
+      const front = u >= half - 1, rear = u <= -half;
+      if ((front || rear) && Math.abs(v) >= 6 && Math.abs(v) <= 10 && z >= top - 3 && z <= top - 2) return front ? [255, 243, 176] : [232, 51, 58];
+      if (front && Math.abs(v) <= 5 && z <= s.clearance + 2) return dark;
+      if (z === s.clearance) return dark;
+      // Passages de roue.
+      for (const wu of wheelU) if ((u - wu) ** 2 + (z - s.wheelR) ** 2 <= (s.wheelR + 1) ** 2 && Math.abs(v) >= hw - 4) return null;
+      return main;
+    }
+    // Habitacle.
+    const base = s.clearance + s.body;
+    if (z > top && z <= s.clearance + s.roof) {
+      const h = z - base;
+      const uf = s.cabFront - h * s.slopeF, ur = s.cabRear + h * s.slopeR;
+      const cw = hw - 2 - h * 0.35;
+      if (u > uf || u < ur || Math.abs(v) > cw) return null;
+      const roofZ = s.clearance + s.roof;
+      if (z >= roofZ) return stripes && Math.abs(v) <= 3 && Math.abs(v) >= 1 ? accent : main;
+      const mid = (s.cabFront + s.cabRear) / 2 - 1;
+      if (Math.abs(u - mid) < 1.2 && Math.abs(v) > cw - 1.5) return main; // montant central
+      return z >= roofZ - 1 ? glassHi : glass;
+    }
+    // Aileron.
+    if (s.spoiler) {
+      const zs = s.clearance + s.body + 3;
+      if (u >= -half + 1 && u <= -half + 4 && Math.abs(v) <= hw && z >= zs && z <= zs + 1) return accent;
+      if (Math.abs(u - (-half + 2.5)) <= 1 && Math.abs(Math.abs(v) - 8) <= 0.5 && z > top && z < zs) return dark;
+    }
+    return null;
+  };
+
+  // Grille de voxels puis on ne garde que la surface.
+  const U0 = -26, V0 = -16, Z0 = 0, NU = 53, NV = 33, NZ = 22;
+  const grid: (RGB | null)[] = new Array(NU * NV * NZ);
+  const idx = (i: number, j: number, k: number) => (k * NV + j) * NU + i;
+  for (let k = 0; k < NZ; k++)
+    for (let j = 0; j < NV; j++) for (let i = 0; i < NU; i++) grid[idx(i, j, k)] = at(i + U0, j + V0, k + Z0);
+  const filled = (i: number, j: number, k: number) => i >= 0 && j >= 0 && k >= 0 && i < NU && j < NV && k < NZ && !!grid[idx(i, j, k)];
+  const out: Voxel[] = [];
+  for (let k = 0; k < NZ; k++) {
+    for (let j = 0; j < NV; j++) {
+      for (let i = 0; i < NU; i++) {
+        const c = grid[idx(i, j, k)];
+        if (!c) continue;
+        const n: [number, number, number] = [0, 0, 0];
+        if (!filled(i + 1, j, k)) n[0]++;
+        if (!filled(i - 1, j, k)) n[0]--;
+        if (!filled(i, j + 1, k)) n[1]++;
+        if (!filled(i, j - 1, k)) n[1]--;
+        if (!filled(i, j, k + 1)) n[2]++;
+        if (!filled(i, j, k - 1)) n[2]--;
+        if (n[0] === 0 && n[1] === 0 && n[2] === 0 && filled(i + 1, j, k) && filled(i, j + 1, k) && filled(i, j, k + 1)) continue;
+        out.push({ u: i + U0 + 0.5, v: j + V0 + 0.5, z: k + Z0, c, n });
+      }
+    }
+  }
+  return out;
+}
+
+// ---------- Rendu d'un angle ----------
+const L = (() => {
+  const l = [-0.35, 0.55, 1];
+  const m = Math.hypot(...l);
+  return l.map((x) => x / m);
+})();
+
+function renderAngle(model: Voxel[], a: number): HTMLCanvasElement {
+  const img = new ImageData(SW, SH);
+  const zb = new Float32Array(SW * SH).fill(-1e9);
+  const ca = Math.cos(a), sa = Math.sin(a);
+  for (const vx of model) {
+    const x = vx.u * ca - vx.v * sa, y = vx.u * sa + vx.v * ca;
+    const nx = vx.n[0] * ca - vx.n[1] * sa, ny = vx.n[0] * sa + vx.n[1] * ca, nz = vx.n[2];
+    const nl = Math.hypot(nx, ny, nz) || 1;
+    const lit = Math.max(0, (nx * L[0] + ny * L[1] + nz * L[2]) / nl);
+    const k = 0.5 + 0.62 * lit;
+    const sx = (x - y) * ISO + AX, sy = (x + y) * (ISO / 2) - vx.z * ISO_Z + AY;
+    const depth = x + y + vx.z * 1.6;
+    const px = Math.round(sx) - 1, py = Math.round(sy) - 1;
+    for (let dy = 0; dy < 3; dy++) {
+      for (let dx = 0; dx < 3; dx++) {
+        const X = px + dx, Y = py + dy;
+        if (X < 0 || Y < 0 || X >= SW || Y >= SH) continue;
+        const o = Y * SW + X;
+        if (depth <= zb[o]) continue;
+        zb[o] = depth;
+        img.data[o * 4] = Math.min(255, vx.c[0] * k);
+        img.data[o * 4 + 1] = Math.min(255, vx.c[1] * k);
+        img.data[o * 4 + 2] = Math.min(255, vx.c[2] * k);
+        img.data[o * 4 + 3] = 255;
+      }
+    }
+  }
+  // Contour sombre d'un pixel, pour que la voiture se détache du décor.
+  const d = img.data;
+  const out = new Uint8ClampedArray(d);
+  for (let y = 0; y < SH; y++) {
+    for (let x = 0; x < SW; x++) {
+      const o = (y * SW + x) * 4;
+      if (d[o + 3]) continue;
+      const n = (X: number, Y: number) => X >= 0 && Y >= 0 && X < SW && Y < SH && d[(Y * SW + X) * 4 + 3] > 0;
+      if (n(x - 1, y) || n(x + 1, y) || n(x, y - 1) || n(x, y + 1)) {
+        out[o] = 14;
+        out[o + 1] = 12;
+        out[o + 2] = 22;
+        out[o + 3] = 230;
+      }
+    }
+  }
+  const c = document.createElement('canvas');
+  c.width = SW;
+  c.height = SH;
+  c.getContext('2d')!.putImageData(new ImageData(out, SW, SH), 0, 0);
+  return c;
+}
+
+const models = new Map<number, Voxel[]>();
+const sprites = new Map<number, HTMLCanvasElement>();
+
+function spriteFor(carId: number, a: number): HTMLCanvasElement | null {
   if (!atlas.complete || !atlas.naturalWidth) return null;
-  let s = cache.get(carId);
+  const b = ((Math.round((a / (Math.PI * 2)) * ANGLES) % ANGLES) + ANGLES) % ANGLES;
+  const key = carId * ANGLES + b;
+  let s = sprites.get(key);
   if (!s) {
-    s = buildSlices(carId);
-    cache.set(carId, s);
+    let m = models.get(carId);
+    if (!m) {
+      m = buildModel(carId);
+      models.set(carId, m);
+    }
+    s = renderAngle(m, (b / ANGLES) * Math.PI * 2);
+    sprites.set(key, s);
   }
   return s;
 }
@@ -182,34 +275,15 @@ function slicesFor(carId: number): Slice[] | null {
  * `a` : cap dans le monde, `lean` : roulis (−1..1, la caisse penche vers l'extérieur).
  */
 export function drawIsoCar(ctx: CanvasRenderingContext2D, carId: number, a: number, sx: number, sy: number, lean = 0, scale = 1): void {
-  const slices = slicesFor(carId);
-  const c = Math.cos(a), s = Math.sin(a);
-  const A = ISO * (c - s) * scale, B = (ISO / 2) * (c + s) * scale;
-  const C = ISO * (-s - c) * scale, D = (ISO / 2) * (c - s) * scale;
-  ctx.save();
-  if (!slices) {
-    ctx.setTransform(A, B, C, D, sx, sy - 8 * scale);
+  const s = spriteFor(carId, a);
+  if (!s) {
     ctx.fillStyle = CARS[carId]?.color ?? '#f0f';
-    ctx.fillRect(-25, -14, 50, 28);
-    ctx.restore();
+    ctx.fillRect(sx - 14, sy - 16, 28, 16);
     return;
   }
-  const base = ctx.getTransform();
-  for (const sl of slices) {
-    // Le roulis décale les tranches hautes vers l'extérieur du virage.
-    const k = (sl.z / CAR_HEIGHT) * lean * 2.2;
-    const ex = sx + C * k, ey = sy + D * k - sl.z * ISO_Z * scale;
-    ctx.setTransform(
-      base.a * A + base.c * B,
-      base.b * A + base.d * B,
-      base.a * C + base.c * D,
-      base.b * C + base.d * D,
-      base.a * ex + base.c * ey + base.e,
-      base.b * ex + base.d * ey + base.f,
-    );
-    ctx.drawImage(sl.img, -CAR_CELL_W / 2, -CAR_CELL_H / 2);
-  }
-  ctx.restore();
+  // Le roulis décale légèrement la voiture vers l'extérieur du virage.
+  const ox = Math.round(-Math.sin(a) * lean * 1.5 * ISO), oy = 0;
+  ctx.drawImage(s, Math.round(sx - AX * scale) + ox, Math.round(sy - AY * scale) + oy, SW * scale, SH * scale);
 }
 
 // ---------- Vignettes des menus ----------
@@ -221,15 +295,18 @@ let thumbUrl = '';
 export function thumbAtlasUrl(): string {
   if (thumbUrl) return thumbUrl;
   if (!atlas.complete || !atlas.naturalWidth) return atlasUrl;
-  const [c, g] = canvas(THUMB_W * 4, THUMB_H * 4);
+  const c = document.createElement('canvas');
+  c.width = THUMB_W * 4;
+  c.height = THUMB_H * 4;
+  const g = c.getContext('2d')!;
   g.imageSmoothingEnabled = false;
   for (let id = 0; id < CARS.length; id++) {
-    const x = (id % 4) * THUMB_W + THUMB_W / 2, y = Math.floor(id / 4) * THUMB_H + THUMB_H / 2 + 7;
+    const x = (id % 4) * THUMB_W + THUMB_W / 2, y = Math.floor(id / 4) * THUMB_H + THUMB_H / 2 + 12;
     g.fillStyle = 'rgba(0,0,0,0.3)';
     g.beginPath();
-    g.ellipse(x, y + 1, 26, 12, 0, 0, Math.PI * 2);
+    g.ellipse(x, y, 26, 11, 0, 0, Math.PI * 2);
     g.fill();
-    drawIsoCar(g, id, -0.35, x, y);
+    drawIsoCar(g, id, -0.45, x, y);
   }
   thumbUrl = c.toDataURL();
   return thumbUrl;
@@ -239,3 +316,4 @@ export const isoReady = new Promise<void>((res) => {
   if (atlas.complete && atlas.naturalWidth) res();
   else atlas.addEventListener('load', () => res(), { once: true });
 });
+

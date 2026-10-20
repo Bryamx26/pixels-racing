@@ -16,6 +16,13 @@ export interface TrackDef {
   grass: string;
   /** Pont : la piste se croise en ce point, le second passage est en hauteur. */
   bridge?: [number, number];
+  /** Décor urbain : rues et immeubles autour de la piste (sinon campagne). */
+  theme?: 'city';
+  /** Rivière (décor) : ligne médiane et largeur ; la piste la franchit sur des ponts. */
+  river?: { points: [number, number][]; width: number };
+  /** Parc (décor) : polygone de pelouse, et un étang (centre, rayons). */
+  park?: [number, number][];
+  pond?: [number, number, number, number];
 }
 
 export const TRACKS: TrackDef[] = [
@@ -58,6 +65,24 @@ export const TRACKS: TrackDef[] = [
       [800, 1600], [1150, 1420], [1500, 1000], [1850, 620], [2300, 420], [2750, 620], [2850, 1050],
       [2650, 1480], [2200, 1620], [1850, 1400], [1500, 1000], [1150, 620], [750, 420], [330, 580],
       [230, 1000], [330, 1420], [500, 1600],
+    ],
+  },
+  {
+    id: 'ville',
+    name: 'Centre-Ville',
+    width: 3600,
+    height: 2500,
+    seed: 77,
+    grass: '#4a9a3c',
+    theme: 'city',
+    bridge: [1450, 1300],
+    river: { points: [[2400, -400], [2300, 500], [2450, 1300], [2350, 2100], [2450, 2900]], width: 170 },
+    park: [[60, 330], [1000, 330], [1250, 900], [1330, 1300], [1100, 1750], [760, 1960], [60, 1960]],
+    pond: [700, 1250, 150, 95],
+    points: [
+      [600, 2150], [1000, 2150], [1200, 1850], [1450, 1300], [1700, 850], [2050, 700], [2600, 650], [3100, 800],
+      [3300, 1200], [3150, 1650], [2700, 1900], [2200, 1950], [1850, 1750], [1450, 1300], [1100, 1000], [850, 600],
+      [500, 450], [250, 800], [300, 1300], [250, 1800], [350, 2100],
     ],
   },
 ];

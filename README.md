@@ -2,9 +2,9 @@
 
 Jeu de course en pixel art **isométrique**, **multijoueur en ligne** dans le navigateur, jouable sur **PC et mobile**.
 
-- Vue isométrique : les voitures sont en volume (chaque sprite de la planche est découpé en tranches empilées : roues, caisse, vitres, toit), circuits entourés d'une ville en blocs et d'arbres, pont surélevé sur pilotis pour Le Grand Huit. Un décor qui cache ta voiture devient transparent.
+- Vue isométrique : voitures modélisées en voxels (roues, caisse, habitacle vitré, phares, aileron ; 4 silhouettes selon la famille, couleurs tirées de la planche), circuits entourés d'une ville en blocs et d'arbres, pont surélevé sur pilotis pour Le Grand Huit. Un décor qui cache ta voiture devient transparent.
 - 16 voitures (tirées de la planche de sprites) réparties en 4 familles : **Équilibrée**, **Vitesse** (pointe haute, moins d'adhérence), **Agile** (accélère et tourne mieux), **Lourde** (pousse les autres, encaisse mieux les chocs).
-- 3 circuits : Circuit Néon, Anneau du Lac et **Le Grand Huit** (en huit avec un pont), plus ton **circuit perso** fait dans l'éditeur.
+- 4 circuits : Circuit Néon, Anneau du Lac, **Le Grand Huit** (en huit avec un pont) et **Centre-Ville** (circuit urbain entre les immeubles, deux ponts sur la rivière, un pont surélevé et un parc avec étang), plus ton **circuit perso** fait dans l'éditeur.
 - Une voiture fait exactement **1/4 de la largeur de la chaussée** : quatre voitures de front, la piste est marquée en quatre voies.
 - Course solo contre 0 à 7 bots, ou salles privées en ligne par code (jusqu'à 8 pilotes, bots en option), lien d'invitation `/?salle=CODE`.
 - Conduite : rotation avec inertie, rayon de braquage selon la vitesse (sous-virage si on entre trop vite), roulis visible, dérapage au freinage à haute vitesse, **aspiration** derrière une voiture (plus d'accélération et de vitesse de pointe, pour tous, bots compris).
