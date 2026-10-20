@@ -7,7 +7,7 @@ import type { TrackDef } from '../../shared/track/tracks';
 import type { LapRecord } from '../../shared/net/protocol';
 import { TRACKS } from '../../shared/track/tracks';
 import type { RoomInfo } from '../../shared/net/protocol';
-import { atlasUrl } from '../render/renderer';
+import { thumbAtlasUrl } from '../render/isoCar';
 
 const root = document.getElementById('screens')!;
 
@@ -30,7 +30,7 @@ export function clear(): void {
 }
 
 export function carThumb(carId: number, scale?: number): string {
-  return `<div class="car-thumb" style="--atlas:url(${atlasUrl});--cx:${carId % 4};--cy:${Math.floor(carId / 4)}${scale ? `;--s:${scale}` : ''}"></div>`;
+  return `<div class="car-thumb" style="--atlas:url(${thumbAtlasUrl()});--cx:${carId % 4};--cy:${Math.floor(carId / 4)}${scale ? `;--s:${scale}` : ''}"></div>`;
 }
 
 /** Grille de choix des 16 voitures. `taken` : voitures déjà prises par d'autres joueurs. */

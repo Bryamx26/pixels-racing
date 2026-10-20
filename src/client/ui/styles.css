@@ -262,14 +262,14 @@ button:disabled { opacity: 0.4; cursor: not-allowed; }
 .player .tag { font-size: 9px; font-family: var(--pixel); color: var(--accent); }
 .player .tag.off { color: var(--danger); }
 
-/* Vignette d'une voiture tirée de l'atlas (64×40 par case). */
+/* Vignette d'une voiture en isométrique (planche générée, 72×52 par case). */
 .car-thumb {
-  --s: 1.25;
-  width: calc(64px * var(--s));
-  height: calc(40px * var(--s));
+  --s: 1.15;
+  width: calc(72px * var(--s));
+  height: calc(52px * var(--s));
   background-image: var(--atlas);
-  background-size: calc(256px * var(--s)) calc(160px * var(--s));
-  background-position: calc(var(--cx) * -64px * var(--s)) calc(var(--cy) * -40px * var(--s));
+  background-size: calc(288px * var(--s)) calc(208px * var(--s));
+  background-position: calc(var(--cx) * -72px * var(--s)) calc(var(--cy) * -52px * var(--s));
   image-rendering: pixelated;
   flex: none;
 }

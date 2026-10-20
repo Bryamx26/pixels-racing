@@ -1,7 +1,8 @@
 # Pixels Racing
 
-Jeu de course en pixel art vue du dessus, **multijoueur en ligne** dans le navigateur, jouable sur **PC et mobile**.
+Jeu de course en pixel art **isométrique**, **multijoueur en ligne** dans le navigateur, jouable sur **PC et mobile**.
 
+- Vue isométrique : les voitures sont en volume (chaque sprite de la planche est découpé en tranches empilées : roues, caisse, vitres, toit), circuits entourés d'une ville en blocs et d'arbres, pont surélevé sur pilotis pour Le Grand Huit. Un décor qui cache ta voiture devient transparent.
 - 16 voitures (tirées de la planche de sprites) réparties en 4 familles : **Équilibrée**, **Vitesse** (pointe haute, moins d'adhérence), **Agile** (accélère et tourne mieux), **Lourde** (pousse les autres, encaisse mieux les chocs).
 - 3 circuits : Circuit Néon, Anneau du Lac et **Le Grand Huit** (en huit avec un pont), plus ton **circuit perso** fait dans l'éditeur.
 - Une voiture fait exactement **1/4 de la largeur de la chaussée** : quatre voitures de front, la piste est marquée en quatre voies.
@@ -44,7 +45,7 @@ Docker : `docker compose up -d --build` (le classement est gardé dans le volume
 
 - `src/shared` : simulation commune client/serveur — physique (`cars/physics.ts`), circuits (`track/`), course, tours et bots (`race/`).
 - `src/server` : HTTP + WebSocket, salles par code, classement (`records/records.ts`, API `GET/POST /api/records`).
-- `src/client` : éditeur (`editor/`), fantôme (`game/ghost.ts`), rendu Canvas basse résolution agrandi sans lissage, HUD, écrans, commandes.
+- `src/client` : éditeur (`editor/`, vu de dessus), fantôme (`game/ghost.ts`), rendu isométrique (`render/iso*.ts`) en Canvas basse résolution agrandi sans lissage, HUD, écrans, commandes.
 - `tools/sprites/extract.py` : découpe la planche `voitures-sheet.png` en atlas (`pip install pillow numpy`).
 
 Ajouter un circuit : une entrée dans `src/shared/track/tracks.ts` (boucle de points de contrôle). `npm test` vérifie que la piste ne se chevauche pas, que les virages sont assez larges et que 8 bots bouclent la course ; il teste aussi le turbo, les objets et les dégâts.
