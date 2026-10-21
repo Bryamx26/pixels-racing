@@ -270,7 +270,6 @@ button:disabled { opacity: 0.4; cursor: not-allowed; }
   background-image: var(--atlas);
   background-size: calc(288px * var(--s)) calc(var(--rows, 5) * 52px * var(--s));
   background-position: calc(var(--cx) * -72px * var(--s)) calc(var(--cy) * -52px * var(--s));
-  image-rendering: pixelated;
   flex: none;
 }
 .player .car-thumb { --s: 0.75; }

@@ -4,6 +4,7 @@ import { lerp } from '../../shared/math';
 import type { RaceEvent, RaceState, Racer } from '../../shared/race/race';
 import { nearestSample, type Track } from '../../shared/track/track';
 import { drawText } from './pixelFont';
+import { fitCanvas } from './hiRes';
 import { ISO, ISO_Z, groundMatrix, isoX, isoY, zAt } from './iso';
 import { renderIsoTrack, type IsoArt } from './isoArt';
 import { CAR_HEIGHT, CAR_SCALE, drawIsoCar } from './isoCar';
@@ -34,11 +35,12 @@ interface Drawable {
  */
 export class Renderer {
   private ctx: CanvasRenderingContext2D;
+  /** Taille de la vue en pixels de jeu (le canevas est plus grand, à la résolution de l'écran). */
+  private size = { W: 0, H: 0, scale: 1 };
   private art: IsoArt | null = null;
   private track: Track | null = null;
   /** Fantôme du contre-la-montre (meilleur tour), dessiné en transparence. */
   ghost: { x: number; y: number; a: number; carId: number } | null = null;
-  private ghostCanvas = document.createElement('canvas');
   private trackId = '';
   private particles: Particle[] = [];
   private lastRear = new Map<string, [number, number, number, number]>();
@@ -51,18 +53,13 @@ export class Renderer {
 
   constructor(private canvas: HTMLCanvasElement) {
     this.ctx = canvas.getContext('2d', { alpha: false })!;
-    this.ghostCanvas.width = this.ghostCanvas.height = 120;
     this.resize();
     addEventListener('resize', () => this.resize());
   }
 
   /** Zoom choisi pour voir au moins ~550 × 330 pixels de scène, quel que soit l'écran. */
   resize(): void {
-    const w = innerWidth, h = innerHeight;
-    const zoom = Math.max(0.6, Math.min(h / 330, w / 550));
-    this.canvas.width = Math.ceil(w / zoom);
-    this.canvas.height = Math.ceil(h / zoom);
-    this.ctx.imageSmoothingEnabled = false;
+    this.size = fitCanvas(this.canvas, this.ctx);
   }
 
   /** Prépare le décor du circuit (une fois par course : les traces de pneus s'y accumulent). */
@@ -124,7 +121,7 @@ export class Renderer {
 
   draw(state: RaceState, focusId: string | null, dt: number): void {
     const ctx = this.ctx;
-    const W = this.canvas.width, H = this.canvas.height;
+    const { W, H } = this.size;
     const art = this.art;
     if (!art) return;
     ctx.imageSmoothingEnabled = false;
@@ -285,12 +282,8 @@ export class Renderer {
   }
 
   private drawGhost(g: { x: number; y: number; a: number; carId: number }, z: number): void {
-    const c = this.ghostCanvas, gc = c.getContext('2d')!;
-    gc.clearRect(0, 0, c.width, c.height);
-    gc.imageSmoothingEnabled = false;
-    drawIsoCar(gc, g.carId, g.a, 60, 80);
     this.ctx.globalAlpha = 0.42;
-    this.ctx.drawImage(c, Math.round(this.sx(g.x, g.y)) - 60, Math.round(this.sy(g.x, g.y, z)) - 80);
+    drawIsoCar(this.ctx, g.carId, g.a, Math.round(this.sx(g.x, g.y)), Math.round(this.sy(g.x, g.y, z)));
     this.ctx.globalAlpha = 1;
   }
 
@@ -298,7 +291,7 @@ export class Renderer {
     const ctx = this.ctx;
     const z = this.zOf(r.idx);
     const sx = Math.round(this.sx(r.x, r.y)), sy = Math.round(this.sy(r.x, r.y, z));
-    if (sx < -60 || sy < -60 || sx > this.canvas.width + 60 || sy > this.canvas.height + 80) return;
+    if (sx < -60 || sy < -60 || sx > this.size.W + 60 || sy > this.size.H + 80) return;
     // Roulis : en virage, la caisse penche vers l'extérieur.
     const vf = r.vx * Math.cos(r.a) + r.vy * Math.sin(r.a);
     const roll = Math.max(-1, Math.min(1, (vf * (r.w ?? 0)) / 1050));

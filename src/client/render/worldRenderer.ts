@@ -4,6 +4,7 @@ import { lerp } from '../../shared/math';
 import type { RoamCar, RoamEvent } from '../../shared/world/roam';
 import type { Challenge, Pt, World } from '../../shared/world/world';
 import { drawText } from './pixelFont';
+import { fitCanvas } from './hiRes';
 import { ISO, groundMatrix } from './iso';
 import { CAR_HEIGHT, CAR_SCALE, drawIsoCar } from './isoCar';
 import { GroundBaker, OX, STANDING, TILE, blockSprite, drawProp, mapX, mapY, treeSprite, worldRect, type SpriteImg } from './worldArt';
@@ -52,6 +53,8 @@ const MAX_SPRITES = 500;
  */
 export class WorldRenderer {
   private ctx: CanvasRenderingContext2D;
+  /** Taille de la vue en pixels de jeu (le canevas est plus grand, à la résolution de l'écran). */
+  private size = { W: 0, H: 0, scale: 1 };
   private baker: GroundBaker;
   private tiles = new Map<string, { c: HTMLCanvasElement; used: number }>();
   private sprites = new Map<number, SpriteImg & { used: number }>();
@@ -68,11 +71,7 @@ export class WorldRenderer {
   }
 
   resize(): void {
-    const w = innerWidth, h = innerHeight;
-    const zoom = Math.max(0.6, Math.min(h / 330, w / 550));
-    this.canvas.width = Math.ceil(w / zoom);
-    this.canvas.height = Math.ceil(h / zoom);
-    this.ctx.imageSmoothingEnabled = false;
+    this.size = fitCanvas(this.canvas, this.ctx);
   }
 
   /** Recentrage immédiat (voyage rapide). */
@@ -151,7 +150,7 @@ export class WorldRenderer {
   draw(cars: RoamCar[], myId: string, dt: number, ov: WorldOverlay): void {
     this.frameNo++;
     const ctx = this.ctx;
-    const W = this.canvas.width, H = this.canvas.height;
+    const { W, H } = this.size;
     ctx.imageSmoothingEnabled = false;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     const L = this.world.layout;
@@ -415,7 +414,7 @@ export class WorldRenderer {
   private car(r: RoamCar): void {
     const ctx = this.ctx;
     const sx = Math.round(this.sx(r.x, r.y)), sy = Math.round(this.sy(r.x, r.y));
-    if (sx < -60 || sy < -60 || sx > this.canvas.width + 60 || sy > this.canvas.height + 80) return;
+    if (sx < -60 || sy < -60 || sx > this.size.W + 60 || sy > this.size.H + 80) return;
     const vf = r.vx * Math.cos(r.a) + r.vy * Math.sin(r.a);
     const roll = Math.max(-1, Math.min(1, (vf * (r.w ?? 0)) / 1050));
     ctx.setTransform(...groundMatrix(OX - this.view.x, -this.view.y));
