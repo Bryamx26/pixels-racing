@@ -16,8 +16,8 @@ export const atlas = new Image();
 atlas.src = atlasUrl;
 
 /** Échelle d'affichage (les voitures sont un peu plus petites que leur zone de choc). */
-const SCALE = 0.86;
-export const CAR_HEIGHT = 15;
+export const CAR_SCALE = 0.7;
+export const CAR_HEIGHT = 12;
 const ANGLES = 48;
 const SW = 68, SH = 58;
 /** Point au sol sous le centre de la voiture, dans le sprite. */
@@ -312,7 +312,7 @@ function renderAngle(model: Voxel[], a: number): HTMLCanvasElement {
   const img = new ImageData(LW, LH);
   const zb = new Float32Array(LW * LH).fill(-1e9);
   const ca = Math.cos(a), sa = Math.sin(a);
-  const f = SCALE / PIX;
+  const f = CAR_SCALE / PIX;
   for (const vx of model) {
     const x = (vx.u * ca - vx.v * sa) * f, y = (vx.u * sa + vx.v * ca) * f, z = vx.z * f;
     const nx = vx.n[0] * ca - vx.n[1] * sa, ny = vx.n[0] * sa + vx.n[1] * ca, nz = vx.n[2];
@@ -408,7 +408,7 @@ export function thumbAtlasUrl(): string {
     const x = (id % 4) * THUMB_W + THUMB_W / 2, y = Math.floor(id / 4) * THUMB_H + THUMB_H / 2 + 10;
     g.fillStyle = 'rgba(0,0,0,0.3)';
     g.beginPath();
-    g.ellipse(x, y, 25, 10, 0, 0, Math.PI * 2);
+    g.ellipse(x, y, 20, 8, 0, 0, Math.PI * 2);
     g.fill();
     drawIsoCar(g, id, -0.45, x, y);
   }
