@@ -22,6 +22,12 @@ const ANGLES = 48;
 const SW = 68, SH = 58;
 /** Point au sol sous le centre de la voiture, dans le sprite. */
 const AX = SW / 2, AY = 38;
+/**
+ * Taille d'un pixel de la voiture en pixels de jeu : le sprite est rendu en basse
+ * définition puis agrandi sans lissage, pour des voitures en gros pixels.
+ */
+const PIX = 2;
+const LW = SW / PIX, LH = SH / PIX;
 
 type RGB = [number, number, number];
 type Kind = 'body' | 'other';
@@ -102,6 +108,9 @@ function palette(carId: number, art: Art | null): [RGB, RGB] {
  */
 function decal(art: Art | null, u: number, v: number, half: number, accent: RGB): RGB | null {
   if (!art) return null;
+  // Lu par blocs de la taille d'un gros pixel, pour une déco nette sans pixels isolés.
+  u = Math.floor(u / PIX) * PIX + PIX / 2;
+  v = Math.floor(v / PIX) * PIX + PIX / 2;
   const x = Math.round(art.x0 + ((u + half) / (2 * half)) * (art.x1 - art.x0));
   const y = Math.round(art.y0 + ((v + CAR_WIDTH / 2) / CAR_WIDTH) * (art.y1 - art.y0));
   const p = art.px;
@@ -114,7 +123,7 @@ function decal(art: Art | null, u: number, v: number, half: number, accent: RGB)
   // Zone d'accent assez grande (pas un reflet isolé).
   let n = 0;
   for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (isAccent(x + dx, y + dy)) n++;
-  return n >= 6 ? accent : null;
+  return n >= 8 ? accent : null;
 }
 
 // ---------- Modèles ----------
@@ -249,8 +258,8 @@ function buildModel(carId: number): Voxel[] {
       if (z >= roofZ) return [main, 'body'];
       const mid = (s.cabFront + s.cabRear) / 2 - 1;
       if (Math.abs(u - mid) < 1.2 && av > cw - 1.5) return [main, 'other']; // montant central
-      // Vitres bleu ciel avec reflets en biais.
-      return [z >= roofZ - 1 || Math.round(u + z * 1.4) % 7 === 0 ? GLARE : glass, 'other'];
+      // Vitres en aplat, avec une seule bande de reflet sous le toit.
+      return [z >= roofZ - 1 ? GLARE : glass, 'other'];
     }
     return null;
   };
@@ -291,53 +300,56 @@ const L = (() => {
   return l.map((x) => x / m);
 })();
 
+/** Ombrage en paliers francs (pas de dégradé), comme une palette de pixel art. */
+function shade(lit: number): number {
+  if (lit > 0.85) return 1.12;
+  if (lit > 0.55) return 0.92;
+  if (lit > 0.25) return 0.74;
+  return 0.56;
+}
+
 function renderAngle(model: Voxel[], a: number): HTMLCanvasElement {
-  const img = new ImageData(SW, SH);
-  const zb = new Float32Array(SW * SH).fill(-1e9);
+  const img = new ImageData(LW, LH);
+  const zb = new Float32Array(LW * LH).fill(-1e9);
   const ca = Math.cos(a), sa = Math.sin(a);
+  const f = SCALE / PIX;
   for (const vx of model) {
-    const x = (vx.u * ca - vx.v * sa) * SCALE, y = (vx.u * sa + vx.v * ca) * SCALE, z = vx.z * SCALE;
+    const x = (vx.u * ca - vx.v * sa) * f, y = (vx.u * sa + vx.v * ca) * f, z = vx.z * f;
     const nx = vx.n[0] * ca - vx.n[1] * sa, ny = vx.n[0] * sa + vx.n[1] * ca, nz = vx.n[2];
     const nl = Math.hypot(nx, ny, nz) || 1;
-    const lit = Math.max(0, (nx * L[0] + ny * L[1] + nz * L[2]) / nl);
-    const k = 0.5 + 0.62 * lit;
-    const sx = (x - y) * ISO + AX, sy = (x + y) * (ISO / 2) - z * ISO_Z + AY;
+    const k = shade(Math.max(0, (nx * L[0] + ny * L[1] + nz * L[2]) / nl));
+    const sx = (x - y) * ISO + AX / PIX, sy = (x + y) * (ISO / 2) - z * ISO_Z + AY / PIX;
     const depth = x + y + z * 1.6;
-    const px = Math.round(sx) - 1, py = Math.round(sy) - 1;
-    for (let dy = 0; dy < 3; dy++) {
-      for (let dx = 0; dx < 3; dx++) {
-        const X = px + dx, Y = py + dy;
-        if (X < 0 || Y < 0 || X >= SW || Y >= SH) continue;
-        const o = Y * SW + X;
-        if (depth <= zb[o]) continue;
-        zb[o] = depth;
-        img.data[o * 4] = Math.min(255, vx.c[0] * k);
-        img.data[o * 4 + 1] = Math.min(255, vx.c[1] * k);
-        img.data[o * 4 + 2] = Math.min(255, vx.c[2] * k);
-        img.data[o * 4 + 3] = 255;
-      }
-    }
+    const X = Math.round(sx), Y = Math.round(sy);
+    if (X < 0 || Y < 0 || X >= LW || Y >= LH) continue;
+    const o = Y * LW + X;
+    if (depth <= zb[o]) continue;
+    zb[o] = depth;
+    img.data[o * 4] = Math.min(255, vx.c[0] * k);
+    img.data[o * 4 + 1] = Math.min(255, vx.c[1] * k);
+    img.data[o * 4 + 2] = Math.min(255, vx.c[2] * k);
+    img.data[o * 4 + 3] = 255;
   }
-  // Contour sombre d'un pixel, pour que la voiture se détache du décor.
+  // Contour sombre d'un gros pixel, pour que la voiture se détache du décor.
   const d = img.data;
   const out = new Uint8ClampedArray(d);
-  const solid = (X: number, Y: number) => X >= 0 && Y >= 0 && X < SW && Y < SH && d[(Y * SW + X) * 4 + 3] > 0;
-  for (let y = 0; y < SH; y++) {
-    for (let x = 0; x < SW; x++) {
-      const o = (y * SW + x) * 4;
+  const solid = (X: number, Y: number) => X >= 0 && Y >= 0 && X < LW && Y < LH && d[(Y * LW + X) * 4 + 3] > 0;
+  for (let y = 0; y < LH; y++) {
+    for (let x = 0; x < LW; x++) {
+      const o = (y * LW + x) * 4;
       if (d[o + 3]) continue;
       if (solid(x - 1, y) || solid(x + 1, y) || solid(x, y - 1) || solid(x, y + 1)) {
         out[o] = 14;
         out[o + 1] = 12;
         out[o + 2] = 22;
-        out[o + 3] = 235;
+        out[o + 3] = 255;
       }
     }
   }
   const c = document.createElement('canvas');
-  c.width = SW;
-  c.height = SH;
-  c.getContext('2d')!.putImageData(new ImageData(out, SW, SH), 0, 0);
+  c.width = LW;
+  c.height = LH;
+  c.getContext('2d')!.putImageData(new ImageData(out, LW, LH), 0, 0);
   return c;
 }
 
