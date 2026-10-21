@@ -5,7 +5,7 @@ import type { RoamCar, RoamEvent } from '../../shared/world/roam';
 import type { Challenge, Pt, World } from '../../shared/world/world';
 import { drawText } from './pixelFont';
 import { ISO, groundMatrix } from './iso';
-import { CAR_HEIGHT, drawIsoCar } from './isoCar';
+import { CAR_HEIGHT, CAR_SCALE, drawIsoCar } from './isoCar';
 import { GroundBaker, OX, STANDING, TILE, blockSprite, drawProp, mapX, mapY, treeSprite, worldRect, type SpriteImg } from './worldArt';
 
 interface Particle {
@@ -421,6 +421,7 @@ export class WorldRenderer {
     ctx.setTransform(...groundMatrix(OX - this.view.x, -this.view.y));
     ctx.translate(r.x + 3, r.y + 3);
     ctx.rotate(r.a);
+    ctx.scale(CAR_SCALE, CAR_SCALE);
     ctx.fillStyle = 'rgba(0,0,0,0.35)';
     ctx.fillRect(-CAR_LENGTH / 2 + 1, -CAR_WIDTH / 2, CAR_LENGTH - 2, CAR_WIDTH);
     ctx.setTransform(1, 0, 0, 1, 0, 0);
