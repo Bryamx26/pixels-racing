@@ -11,6 +11,8 @@ export class Hud {
   private els: Record<'pos' | 'lap' | 'time' | 'speed' | 'center' | 'net' | 'boost' | 'damage' | 'item' | 'extra', HTMLElement>;
   /** Texte libre sous le chrono (fantôme du contre-la-montre). */
   extra = '';
+  /** Compte-tours (rapport engagé, régime). */
+  gaugeHtml = '';
   private flash: { text: string; until: number; small: boolean } | null = null;
   private wrongWay = 0;
   onMenu: () => void = () => {};
@@ -107,7 +109,7 @@ export class Hud {
       this.touchReady('boost', me.boost >= CAR.boostMin && me.boostTicks <= 0);
       this.touchReady('item', !!me.item);
       const kmh = Math.round(Math.hypot(me.vx, me.vy) * 0.5);
-      this.els.speed.innerHTML = `${kmh} <small>KM/H</small>`;
+      this.els.speed.innerHTML = `${kmh} <small>KM/H</small><div class="gauge">${this.gaugeHtml}</div>`;
       // Mauvais sens : la vitesse va contre le sens de la piste.
       const dot = me.vx * track.txs[me.idx] + me.vy * track.tys[me.idx];
       this.wrongWay = dot < -40 && state.phase === 'race' ? this.wrongWay + dt : 0;

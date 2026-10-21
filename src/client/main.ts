@@ -1,5 +1,4 @@
 import { CARS } from '../shared/cars/roster';
-import { CAR } from '../shared/cars/physics';
 import { COUNTDOWN_TICKS, DEFAULT_LAPS } from '../shared/constants';
 import { formatTime, type Entrant, type RaceEvent } from '../shared/race/race';
 import type { RoomInfo, ServerMsg } from '../shared/net/protocol';
@@ -12,7 +11,11 @@ import { DriftScore, type DriftEvent } from '../shared/race/driftScore';
 import { LocalRace } from './game/localRace';
 import { OnlineRace } from './game/onlineRace';
 import type { RaceView } from './game/raceView';
-import { Controls, isTouchDevice } from './input/controls';
+import { Controls, DEFAULT_WHEEL, firstPad, isTouchDevice, pedal, type WheelConfig } from './input/controls';
+import { CarFeel } from './feel';
+import { fxPrefs } from './render/speedFx';
+import { lateralOffset } from '../shared/track/track';
+import { KERB_WIDTH, ROAD_WIDTH } from '../shared/constants';
 import { Connection } from './net/connection';
 import { fetchRecords, submitRecord } from './net/records';
 import { Renderer } from './render/renderer';
@@ -49,6 +52,8 @@ const prefs = {
   items: store.get('items', '1') === '1',
   autoGas: store.get('autogas', touch ? '1' : '0') === '1',
   muted: store.get('mute', '0') === '1',
+  vibrate: store.get('vibrate', '1') === '1',
+  fx: store.get('fx', '1') === '1',
 };
 
 // ---------- Circuit perso (éditeur) ----------
@@ -74,9 +79,17 @@ const toastEl = document.getElementById('toast')!;
 const renderer = new Renderer(canvas);
 const controls = new Controls(touchEl);
 controls.autoGas = prefs.autoGas;
+try {
+  controls.wheel = { ...DEFAULT_WHEEL, ...(JSON.parse(store.get('wheel', '{}')) as Partial<WheelConfig>) };
+} catch {
+  /* réglages illisibles : valeurs par défaut */
+}
+fxPrefs.on = prefs.fx;
+const saveWheel = () => store.set('wheel', JSON.stringify(controls.wheel));
 const hud = new Hud(hudEl);
 const sound = new Sound();
 sound.muted = prefs.muted;
+const feel = new CarFeel(sound, () => prefs.vibrate);
 
 let conn: Connection | null = null;
 let room: RoomInfo | null = null;
@@ -171,6 +184,11 @@ function showHome(): void {
       readName();
       openEditor();
     },
+    settings: () => {
+      readName();
+      sound.unlock();
+      showSettings();
+    },
     records: () => {
       readName();
       showRecords(isOfficialTrack(prefs.trackId) ? prefs.trackId : TRACKS[0].id);
@@ -221,6 +239,120 @@ function showSolo(mode: ui.SoloMode): void {
   });
 }
 
+// ---------- Réglages et volant ----------
+let settingsTimer = 0;
+function showSettings(): void {
+  const w = controls.wheel;
+  ui.show(ui.settingsScreen({ wheel: w.enabled, rotation: w.rotation, device: w.device, vibrate: prefs.vibrate, fx: prefs.fx, autoGas: prefs.autoGas }), {
+    wheel: (el) => {
+      w.enabled = (el as HTMLInputElement).checked;
+      saveWheel();
+    },
+    rotation: (el) => {
+      w.rotation = Number((el as HTMLSelectElement).value);
+      saveWheel();
+    },
+    device: (el) => {
+      w.device = Number((el as HTMLSelectElement).value);
+      saveWheel();
+    },
+    vibrate: (el) => {
+      prefs.vibrate = (el as HTMLInputElement).checked;
+      store.set('vibrate', prefs.vibrate ? '1' : '0');
+      if (prefs.vibrate) feel.impact(250);
+    },
+    fx: (el) => {
+      prefs.fx = fxPrefs.on = (el as HTMLInputElement).checked;
+      store.set('fx', prefs.fx ? '1' : '0');
+    },
+    autogas: (el) => {
+      prefs.autoGas = controls.autoGas = (el as HTMLInputElement).checked;
+      store.set('autogas', prefs.autoGas ? '1' : '0');
+    },
+    calib: () => calibrate(),
+    back: () => {
+      clearInterval(settingsTimer);
+      showHome();
+    },
+  });
+  // Lecture en direct du volant et des pédales.
+  clearInterval(settingsTimer);
+  settingsTimer = window.setInterval(() => {
+    const el = document.getElementById('wheel-live');
+    if (!el) return clearInterval(settingsTimer);
+    const pad = firstPad();
+    if (!pad) return;
+    const deg = ((pad.axes[w.steerAxis] ?? 0) - w.steerCenter) * w.steerSign * (w.device / 2);
+    const gas = pedal(pad.axes[w.gasAxis] ?? w.gasRest, w.gasRest), brk = pedal(pad.axes[w.brakeAxis] ?? w.brakeRest, w.brakeRest);
+    const bar = (v: number) => `<i style="width:${Math.round(v * 100)}%"></i>`;
+    el.innerHTML = `<b>${ui.esc(pad.id.slice(0, 48))}</b><br>Volant ${Math.round(deg)}° · direction ${Math.round(Math.max(-1, Math.min(1, deg / (w.rotation / 2))) * 100)} %
+      <div class="pbar">GAZ<span>${bar(gas)}</span></div><div class="pbar">FREIN<span>${bar(brk)}</span></div>`;
+  }, 80);
+}
+
+/** Calibrage en 4 étapes : repos, volant à droite, accélérateur, frein. */
+function calibrate(): void {
+  const box = document.getElementById('calib')!;
+  box.hidden = false;
+  const w = controls.wheel;
+  let rest: number[] = [];
+  const steps = [
+    'Lâche le volant (au centre) et les pédales, puis SUIVANT.',
+    'Tourne le volant d\'un quart de tour vers la DROITE et garde-le, puis SUIVANT.',
+    'Appuie à fond sur l\'ACCÉLÉRATEUR et garde-le, puis SUIVANT.',
+    'Appuie à fond sur le FREIN et garde-le, puis SUIVANT.',
+  ];
+  let k = 0;
+  const moved = (pad: Gamepad, skip: number[], min = 0.25) => {
+    let best = -1, bd = min;
+    pad.axes.forEach((v, i) => {
+      if (skip.includes(i)) return;
+      const d = Math.abs(v - (rest[i] ?? 0));
+      if (d > bd) (bd = d), (best = i);
+    });
+    return best;
+  };
+  const render = () => {
+    box.innerHTML = `<p>Étape ${k + 1}/4 : ${steps[k]}</p><button data-c="next">SUIVANT</button>`;
+    box.querySelector('[data-c=next]')!.addEventListener('click', next);
+  };
+  const next = () => {
+    const pad = firstPad();
+    if (!pad) {
+      box.innerHTML = '<p>Aucun volant détecté : branche-le et touche une pédale.</p>';
+      return;
+    }
+    if (k === 0) rest = [...pad.axes];
+    if (k === 1) {
+      const i = moved(pad, [], 0.08);
+      if (i < 0) return toast('Tourne le volant plus franchement.');
+      w.steerAxis = i;
+      w.steerCenter = rest[i];
+      w.steerSign = pad.axes[i] > rest[i] ? 1 : -1;
+    }
+    if (k === 2) {
+      const i = moved(pad, [w.steerAxis]);
+      if (i < 0) return toast('Appuie à fond sur l\'accélérateur.');
+      w.gasAxis = i;
+      w.gasRest = rest[i];
+    }
+    if (k === 3) {
+      const i = moved(pad, [w.steerAxis, w.gasAxis]);
+      if (i < 0) return toast('Appuie à fond sur le frein.');
+      w.brakeAxis = i;
+      w.brakeRest = rest[i];
+      w.enabled = true;
+      saveWheel();
+      box.innerHTML = '<p>Volant calibré ! Le mode volant est activé.</p>';
+      (document.querySelector('[data-a=wheel]') as HTMLInputElement).checked = true;
+      return;
+    }
+    k++;
+    render();
+  };
+  render();
+}
+
 // ---------- Monde ouvert ----------
 let roam: RoamMode | null = null;
 let roamPending = false;
@@ -266,6 +398,7 @@ function enterRoam(view: LocalRoam | OnlineRoam): void {
       if (view.online) conn?.send({ t: 'brag', text });
     },
     rtt: () => (view.online && conn ? conn.rtt : null),
+    feel,
   });
   if (touch && innerHeight > innerWidth) toast("Tourne ton téléphone à l'horizontale 📱", true);
 }
@@ -548,6 +681,7 @@ function soundEvents(events: RaceEvent[], myId: string, meX: number, meY: number
   for (const e of events) {
     if (e.type === 'bump' && Math.hypot(e.x - meX, e.y - meY) < 80) {
       sound.bump(e.power);
+      feel.impact(e.power);
       renderer.shake = Math.min(8, e.power / 40);
     }
     if (e.type === 'go') sound.beep(880, 0.4);
@@ -607,8 +741,20 @@ function frame(now: number): void {
         if (sec !== lastCountdown && sec > 0) sound.beep(440, 0.15);
         lastCountdown = sec;
       }
-      const speed = me ? Math.hypot(me.vx, me.vy) / CAR.maxSpeed : 0;
-      sound.setEngine(speed, !!me, state.phase !== 'done' && !pauseOpen);
+      let kerb = false;
+      if (me && !me.offroad) {
+        const lat = Math.abs(lateralOffset(race.track, me.idx, me.x, me.y));
+        kerb = lat > ROAD_WIDTH / 2 - 6 && lat < ROAD_WIDTH / 2 + KERB_WIDTH + 4 && Math.hypot(me.vx, me.vy) > 40;
+      }
+      feel.update(me ?? null, dt, { kerb, on: state.phase !== 'done' && !pauseOpen });
+      hud.gaugeHtml = feel.gauge();
+      for (const e of events) {
+        if (e.type === 'wall' && e.id === race.myId) {
+          feel.impact(e.power);
+          renderer.shake = Math.max(renderer.shake, Math.min(7, e.power / 50));
+        }
+        if (e.type === 'boost' && e.id === race.myId) feel.impact(120);
+      }
       if (state.phase === 'done' && !resultsShown) {
         resultsShown = true;
         touchEl.hidden = true;

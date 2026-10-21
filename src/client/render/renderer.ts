@@ -4,6 +4,7 @@ import { lerp } from '../../shared/math';
 import type { RaceEvent, RaceState, Racer } from '../../shared/race/race';
 import { nearestSample, type Track } from '../../shared/track/track';
 import { drawText } from './pixelFont';
+import { drawSpeedFx } from './speedFx';
 import { ISO, ISO_Z, groundMatrix, isoX, isoY, zAt } from './iso';
 import { renderIsoTrack, type IsoArt } from './isoArt';
 import { CAR_HEIGHT, CAR_SCALE, drawIsoCar } from './isoCar';
@@ -98,8 +99,15 @@ export class Renderer {
     return zAt(t, nearestSample(t, x, y));
   }
 
+  private lastRacers: Racer[] = [];
+
   onEvents(events: RaceEvent[]): void {
     for (const e of events) {
+      if (e.type === 'wall' && e.power > 90) {
+        // Étincelles contre le mur de pneus.
+        const r = this.lastRacers.find((x) => x.id === e.id);
+        if (r) this.spawn(r.x, r.y, this.zOf(r.idx) + 6, Math.random() < 0.5 ? '#ffe14f' : '#ff9a2a', 4 + Math.min(10, e.power / 40), 160, 0.3);
+      }
       if (e.type === 'spin') this.spawn(e.x, e.y, this.zNear(e.x, e.y), '#1a1a1a', 10, 80, 0.6, 3);
       if (e.type === 'pickup') {
         const z = this.zNear(e.x, e.y) + 10;
@@ -157,6 +165,7 @@ export class Renderer {
     this.view = { x: vx, y: vy };
 
     this.updateTrails(state.racers);
+    this.lastRacers = state.racers;
 
     ctx.fillStyle = '#2a5e28';
     ctx.fillRect(0, 0, W, H);
@@ -237,6 +246,7 @@ export class Renderer {
         shadow: '#000',
       });
     }
+    if (focusR && state.phase === 'race') drawSpeedFx(ctx, W, H, Math.hypot(focusR.vx, focusR.vy) / 470, focusR.boostTicks > 0, fsx, fsy);
   }
 
   /** Transforme le contexte pour dessiner à plat sur le sol (à la hauteur z). */
@@ -375,7 +385,14 @@ export class Renderer {
         });
       }
       const skidding = !r.offroad && (slip > 70 || r.drift);
-      if (skidding && Math.random() < 0.25) this.spawn(bx, by, z, '#cfcfd6', 1, 25, 0.6, 3);
+      if (skidding) {
+        // Fumée des pneus : plus dense quand la voiture est bien en travers.
+        const puff = Math.min(1, (slip - 50) / 150) + (r.drift ? 0.4 : 0);
+        if (Math.random() < puff) {
+          this.spawn(bx + ox, by + oy, z, Math.random() < 0.5 ? '#e4e4ea' : '#c4c4cc', 1, 30, 0.9, 4);
+          this.spawn(bx - ox, by - oy, z, '#d6d6de', 1, 30, 0.8, 3);
+        }
+      }
       // Pas de traces sur le pont (le sol cuit est en dessous).
       if (!prev || !skidding || z > 0) continue;
       if (Math.hypot(prev[0] - rear[0], prev[1] - rear[1]) > 30) continue;

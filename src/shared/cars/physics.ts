@@ -22,6 +22,8 @@ export interface CarBody {
   spin: number;
   /** Dégâts (0..1) : réduisent l'accélération et la vitesse de pointe. Réparés aux stands. */
   damage: number;
+  /** Transfert de charge longitudinal lissé (−1 : plongée au freinage, +1 : cabrage à l'accélération). */
+  load?: number;
   /** Échantillon de piste le plus proche. */
   idx: number;
   /** Progression « déroulée » en échantillons : tours × n + idx (négative sur la grille). */
@@ -47,6 +49,10 @@ export const CAR = {
   maxSteer: 0.6,
   /** Accélération latérale maximale avant que les pneus glissent (sous-virage). */
   lateralGrip: 1050,
+  /** Vitesse du transfert de charge (1/s). */
+  loadResponse: 5,
+  /** Décélération latérale maximale des pneus pendant une glisse (unités/s²). */
+  slideGrip: 1500,
   /** Réactivité du châssis : vitesse à laquelle la rotation rejoint la consigne. */
   yawResponse: 9,
   /** Aspiration : gain d'accélération et de vitesse de pointe derrière une voiture. */
@@ -194,6 +200,13 @@ export function stepDynamics(b: CarBody, inp: CarInput, dt: number, mods: StepMo
   if (offroad && Math.abs(vf) > CAR.grassMaxSpeed) vf -= (vf - Math.sign(vf) * CAR.grassMaxSpeed) * CAR.grassDrag * dt;
   if (spinning) vf *= 1 - 1.2 * dt;
 
+  // Transfert de charge : au freinage l'avant s'écrase (il braque mieux, l'arrière s'allège
+  // et aide à placer la voiture), à l'accélération l'avant se déleste (léger sous-virage).
+  const wantLoad = spinning ? 0 : clamp((inp.brake > 0.05 && vf > 10 ? -inp.brake : 0) + (inp.throttle > 0.05 ? inp.throttle * 0.6 : 0), -1, 1);
+  const load = (b.load ?? 0) + (wantLoad - (b.load ?? 0)) * Math.min(1, CAR.loadResponse * dt);
+  b.load = load;
+  const nose = Math.max(0, -load), squat = Math.max(0, load);
+
   // Direction (modèle bicyclette) : le rayon de braquage dépend de l'angle des roues,
   // qui se réduit à haute vitesse ; les pneus limitent l'accélération latérale
   // (la voiture élargit sa trajectoire si on arrive trop vite : sous-virage).
@@ -201,14 +214,18 @@ export function stepDynamics(b: CarBody, inp: CarInput, dt: number, mods: StepMo
   const steerAngle = inp.steer * CAR.maxSteer * (1 - 0.45 * clamp(sp / CAR.maxSpeed, 0, 1));
   let target = (vf * Math.tan(steerAngle)) / CAR.wheelbase;
   const gripMul = (drift ? 1.6 : offroad ? 0.6 : 1) * st.grip * surfGrip;
-  const maxYaw = (CAR.lateralGrip * gripMul) / Math.max(sp, 1);
+  const maxYaw = ((CAR.lateralGrip * gripMul) / Math.max(sp, 1)) * (1 + 0.22 * nose - 0.08 * squat);
   target = clamp(target, -maxYaw, maxYaw) * (drift ? 1.3 + 0.35 * dk : 1);
   // Inertie : la rotation rejoint la consigne progressivement (et plus lentement en glisse).
   if (spinning) b.w += (Math.sign(b.w || 1) * 9 - b.w) * Math.min(1, 6 * dt);
-  else b.w += (target - b.w) * Math.min(1, CAR.yawResponse * (drift ? 0.5 : 1) * dt);
+  else b.w += (target - b.w) * Math.min(1, CAR.yawResponse * (drift ? 0.5 : 1) * (1 + 0.3 * nose) * dt);
   // Adhérence : la vitesse latérale disparaît vite, sauf en dérapage (et presque plus sur l'huile).
   const lateral = (spinning ? CAR.grip * 0.15 : drift ? CAR.driftGrip * (1 - 0.3 * dk) : offroad ? CAR.grip * 0.6 : CAR.grip * st.grip) * surfGrip;
-  vr *= Math.exp(-lateral * dt);
+  // Les pneus ont une limite : une grosse glisse se rattrape progressivement (on la sent et
+  // on peut la contre-braquer) au lieu de disparaître d'un coup.
+  const settle = Math.abs(vr) * (1 - Math.exp(-lateral * (1 - 0.18 * nose) * dt));
+  const cap = drift || spinning ? Infinity : CAR.slideGrip * st.grip * surfGrip * (offroad ? 0.6 : 1) * dt;
+  vr -= Math.sign(vr) * Math.min(settle, cap);
 
   b.vx = vf * cos - vr * sin;
   b.vy = vf * sin + vr * cos;

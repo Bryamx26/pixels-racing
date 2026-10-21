@@ -4,6 +4,7 @@ import { lerp } from '../../shared/math';
 import type { RoamCar, RoamEvent } from '../../shared/world/roam';
 import type { Challenge, Pt, World } from '../../shared/world/world';
 import { drawText } from './pixelFont';
+import { drawSpeedFx } from './speedFx';
 import { ISO, groundMatrix } from './iso';
 import { CAR_HEIGHT, CAR_SCALE, drawIsoCar } from './isoCar';
 import { GroundBaker, OX, STANDING, TILE, blockSprite, drawProp, mapX, mapY, treeSprite, worldRect, type SpriteImg } from './worldArt';
@@ -288,6 +289,7 @@ export class WorldRenderer {
       if (c.id === myId) continue;
       drawText(ctx, c.name, this.sx(c.x, c.y), this.sy(c.x, c.y, CAR_HEIGHT) - 16, { align: 'center', color: CARS[c.carId]?.color ?? '#fff', shadow: '#000' });
     }
+    if (me) drawSpeedFx(ctx, W, H, Math.hypot(me.vx, me.vy) / 470, me.boostTicks > 0, this.sx(me.x, me.y), this.sy(me.x, me.y));
     // Flèche vers l'objectif du défi en cours.
     if (me && ov.target) {
       const a = Math.atan2(ov.target[1] - me.y, ov.target[0] - me.x);
@@ -457,7 +459,14 @@ export class WorldRenderer {
         }
       }
       const skidding = !r.offroad && (slip > 70 || r.drift);
-      if (skidding && Math.random() < 0.3) this.spawn(bx, by, 0, '#cfcfd6', 1, 25, 0.7, 3);
+      if (skidding) {
+        // Fumée des pneus : plus dense quand la voiture est bien en travers.
+        const puff = Math.min(1, (slip - 50) / 150) + (r.drift ? 0.4 : 0);
+        if (Math.random() < puff) {
+          this.spawn(bx + ox, by + oy, 0, Math.random() < 0.5 ? '#e4e4ea' : '#c4c4cc', 1, 30, 0.9, 4);
+          this.spawn(bx - ox, by - oy, 0, '#d6d6de', 1, 30, 0.8, 3);
+        }
+      }
       if (!prev || !skidding || Math.hypot(prev[0] - rear[0], prev[1] - rear[1]) > 30) continue;
       const mx = mapX(rear[0], rear[1]), my = mapY(rear[0], rear[1]);
       const tk = Math.floor(mx / TILE) + ',' + Math.floor(my / TILE);

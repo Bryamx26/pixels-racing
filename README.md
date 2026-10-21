@@ -45,6 +45,10 @@ Docker : `docker compose up -d --build` (le classement est gardé dans le volume
 | Objet | E, F, Entrée ou Ctrl | OBJET | Y / RB |
 | Menu | Échap | II | |
 
+**Volant** (Logitech, Thrustmaster, Fanatec…) : Accueil → RÉGLAGES / VOLANT. Calibrage en 4 étapes (repos, volant à droite, accélérateur, frein), direction linéaire sans zone morte, rotation en jeu réglable de 270° à 1080° (900° par défaut, comme une vraie voiture), pédales séparées, palettes = turbo.
+
+**Sensations** : transfert de charge (l'avant braque mieux au freinage), pneus qui lâchent progressivement en glisse, boîte à 6 rapports simulée (compte-tours, son), crissement des pneus, vent, vibreurs, fumée de drift, étincelles, traits de vitesse et halo du turbo, vibrations de la manette et du téléphone (désactivables dans les réglages).
+
 ## Organisation
 
 - `src/shared` : simulation commune client/serveur — physique (`cars/physics.ts`), circuits (`track/`), course, tours et bots (`race/`).

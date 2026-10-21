@@ -97,6 +97,7 @@ export function homeScreen(name: string, joinCode: string, autoGas: boolean, mut
     <div class="row">
       <button class="secondary" data-a="editor">ÉDITEUR DE CIRCUIT</button>
       <button class="secondary" data-a="records">CLASSEMENT</button>
+      <button class="secondary" data-a="settings">RÉGLAGES / VOLANT</button>
     </div>
     <div class="row">
       <label class="check"><input type="checkbox" data-a="autogas" ${autoGas ? 'checked' : ''}> Accélération automatique</label>
@@ -118,6 +119,38 @@ export function roamScreen(carId: number): string {
       <button data-a="solo">ROULER SEUL</button>
       <button data-a="online">EN LIGNE (LIBRE)</button>
     </div>
+  </div>`;
+}
+
+export interface SettingsView {
+  wheel: boolean;
+  rotation: number;
+  device: number;
+  vibrate: boolean;
+  fx: boolean;
+  autoGas: boolean;
+}
+
+/** Réglages : volant (rotation, calibrage), vibrations, effets de vitesse. */
+export function settingsScreen(v: SettingsView): string {
+  const opt = (list: number[], sel: number) => list.map((n) => `<option value="${n}" ${n === sel ? 'selected' : ''}>${n}°</option>`).join('');
+  return `<div class="screen">
+    <div class="title small">RÉGLAGES</div>
+    <h3>VOLANT ET PÉDALIER</h3>
+    <label class="check"><input type="checkbox" data-a="wheel" ${v.wheel ? 'checked' : ''}> Mode volant (direction linéaire, pédales séparées)</label>
+    <div class="row">
+      <label class="field">Rotation en jeu<select data-a="rotation">${opt([270, 360, 540, 720, 900, 1080], v.rotation)}</select></label>
+      <label class="field">Ton volant (butée à butée)<select data-a="device">${opt([270, 540, 900, 1080], v.device)}</select></label>
+    </div>
+    <p class="hint">900° comme une vraie voiture : il faut tourner beaucoup, c'est précis. Moins de degrés = direction plus vive.</p>
+    <div class="wheel-live" id="wheel-live">Branche ton volant et touche-le pour qu'il soit détecté.</div>
+    <div class="row"><button class="secondary" data-a="calib">CALIBRER LE VOLANT</button></div>
+    <div class="calib" id="calib" hidden></div>
+    <h3>SENSATIONS</h3>
+    <label class="check"><input type="checkbox" data-a="vibrate" ${v.vibrate ? 'checked' : ''}> Vibrations (manette, téléphone)</label>
+    <label class="check"><input type="checkbox" data-a="fx" ${v.fx ? 'checked' : ''}> Effets de vitesse (traits, halo du turbo)</label>
+    <label class="check"><input type="checkbox" data-a="autogas" ${v.autoGas ? 'checked' : ''}> Accélération automatique</label>
+    <div class="row"><button data-a="back">RETOUR</button></div>
   </div>`;
 }
 

@@ -77,8 +77,8 @@ export class OnlineRace implements RaceView {
     // Réconciliation : on repart de l'état serveur et on rejoue les commandes non confirmées.
     this.history = this.history.filter((h) => h.seq > ack);
     const old = this.me;
-    const { x, y, a, vx, vy, w, boost, boostTicks, spin, damage, idx, prog } = r!;
-    const body: CarBody = { x, y, a, vx, vy, w, boost, boostTicks, spin, damage, idx, prog };
+    const { x, y, a, vx, vy, w, boost, boostTicks, spin, damage, idx, prog, load } = r!;
+    const body: CarBody = { x, y, a, vx, vy, w, boost, boostTicks, spin, damage, idx, prog, load };
     let tick = state.tick;
     for (const h of this.history) {
       tick++;

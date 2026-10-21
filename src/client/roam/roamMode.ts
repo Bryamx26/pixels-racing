@@ -2,8 +2,9 @@ import { CAR } from '../../shared/cars/physics';
 import { CARS } from '../../shared/cars/roster';
 import { CHALLENGE_LABEL, ChallengeTracker, KMH, formatValue, starsFor, type ChallengeEvent } from '../../shared/world/challenges';
 import type { RoamCar, RoamEvent } from '../../shared/world/roam';
-import { getWorld, type Challenge, type Pt } from '../../shared/world/world';
+import { Surf, getWorld, type Challenge, type Pt } from '../../shared/world/world';
 import type { Sound } from '../audio';
+import type { CarFeel } from '../feel';
 import type { RoamView } from '../game/roamView';
 import { WorldRenderer, KIND_COLOR } from '../render/worldRenderer';
 import { OX, mapX, mapY, worldMapImage } from '../render/worldArt';
@@ -42,6 +43,7 @@ export interface RoamDeps {
   /** Annonce d'un exploit aux autres joueurs (en ligne). */
   brag: (text: string) => void;
   rtt: () => number | null;
+  feel: CarFeel;
 }
 
 /**
@@ -425,13 +427,17 @@ export class RoamMode {
     this.renderer.draw(cars, v.myId, dt, { boards: L.boards.filter((b) => !this.smashed.has(b.id)), active: a?.ch ?? null, target });
     this.cars = cars;
     this.hud(me, now);
-    const sp = me ? Math.hypot(me.vx, me.vy) : 0;
-    this.deps.sound.setEngine(sp / CAR.maxSpeed, !!me, !this.mapOpen && !this.menuOpen);
+    const surf = me ? this.world.surfAt(me.x, me.y) : Surf.Road;
+    this.deps.feel.update(me ?? null, dt, { rough: surf === Surf.Dirt || surf === Surf.Grass || surf === Surf.Sand || surf === Surf.Field || surf === Surf.Forest, on: !this.mapOpen && !this.menuOpen });
+    for (const e of events) {
+      if (e.type === 'wall' && e.id === v.myId) this.deps.feel.impact(e.power);
+      if (e.type === 'bump' && me && Math.hypot(e.x - me.x, e.y - me.y) < 80) this.deps.feel.impact(e.power);
+    }
   }
 
   private hud(me: RoamCar | undefined, now: number): void {
     if (me) {
-      this.els.speed.innerHTML = `${Math.round(Math.hypot(me.vx, me.vy) * KMH)} <small>KM/H</small>`;
+      this.els.speed.innerHTML = `${Math.round(Math.hypot(me.vx, me.vy) * KMH)} <small>KM/H</small><div class="gauge">${this.deps.feel.gauge()}</div>`;
       const lvl = me.boostTicks > 0 ? me.boostTicks / CAR.boostTicksFull : me.boost;
       (this.els.boost.firstElementChild as HTMLElement).style.width = `${Math.min(1, lvl) * 100}%`;
       this.els.boost.classList.toggle('ready', me.boost >= CAR.boostMin && me.boostTicks <= 0);
