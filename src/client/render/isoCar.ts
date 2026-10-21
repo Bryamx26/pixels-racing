@@ -127,7 +127,7 @@ function decal(art: Art | null, u: number, v: number, half: number, accent: RGB)
 }
 
 // ---------- Modèles ----------
-type ModelKind = 'muscle' | 'sport' | 'hatch' | 'sedan' | 'suv' | 'monster' | 'drift';
+type ModelKind = 'muscle' | 'sport' | 'hatch' | 'sedan' | 'suv' | 'monster' | 'drift' | 'gtr';
 
 interface Shape {
   kind: ModelKind;
@@ -154,6 +154,7 @@ const MODEL: ModelKind[] = [
   'muscle', 'hatch', 'sport', 'sedan',
   'monster', 'suv', 'sport', 'suv',
   'drift', 'drift', 'drift', 'drift',
+  'gtr',
 ];
 
 function shapeFor(carId: number): Shape {
@@ -171,6 +172,8 @@ function shapeFor(carId: number): Shape {
       return { kind, len: 48, clearance: 4, body: 9, cabRear: -21, cabFront: 7, roof: 17, slopeF: 0.6, slopeR: 0.1, wheelR: 5.5, round: 1, wing: 'none' };
     case 'monster':
       return { kind, len: 44, clearance: 8, body: 7, cabRear: -12, cabFront: 5, roof: 19, slopeF: 0.8, slopeR: 0.3, wheelR: 7.5, round: 1, wing: 'none' };
+    case 'gtr': // coupé japonais musclé : caisse carrée, ailes larges, capot ajouré, grand aileron
+      return { kind, len: 50, clearance: 2, body: 8, cabRear: -12, cabFront: 4, roof: 13, slopeF: 1.5, slopeR: 1.2, wheelR: 4.5, round: 0.8, wing: 'gt' };
     case 'drift': // japonaise de drift : basse, ailes larges, grand aileron
       return { kind, len: 50, clearance: 2, body: 7, cabRear: -12, cabFront: 5, roof: 12.5, slopeF: 1.5, slopeR: 1.2, wheelR: 4.5, round: 1.4, wing: 'gt' };
   }
@@ -182,6 +185,7 @@ const DARK: RGB = [24, 24, 30];
 const CHROME: RGB = [200, 204, 214];
 const TYRE: RGB = [22, 22, 26];
 const RIM: RGB = [190, 194, 206];
+const DARK_RIM: RGB = [92, 96, 110];
 const HEAD: RGB = [255, 240, 170];
 const TAIL: RGB = [230, 48, 54];
 
@@ -195,9 +199,10 @@ function buildModel(carId: number): Voxel[] {
   const hw = CAR_WIDTH / 2 - 2;
   const wheelU = [half - 9, -half + 9];
   const base = s.clearance + s.body;
-  const flare = s.kind === 'drift' ? 1 : 0;
+  const flare = s.kind === 'drift' || s.kind === 'gtr' ? 1 : 0;
+  const rim = s.kind === 'gtr' ? DARK_RIM : RIM;
   // Vitres foncées sur les voitures bleues (sinon elles se confondent avec la caisse).
-  const glass: RGB = main[2] > main[0] + 30 && main[2] > main[1] ? [36, 44, 78] : GLASS;
+  const glass: RGB = s.kind === 'gtr' ? [16, 17, 24] : main[2] > main[0] + 30 && main[2] > main[1] ? [36, 44, 78] : GLASS;
   // Voitures de drift : une sur deux bicolore (bas de caisse de la couleur d'accent).
   const twoTone = !!def?.drift && carId % 2 === 1;
 
@@ -215,7 +220,7 @@ function buildModel(carId: number): Voxel[] {
     for (const wu of wheelU) {
       const d2 = (u - wu) ** 2 + (z - s.wheelR) ** 2;
       if (d2 <= s.wheelR * s.wheelR && av >= hw - 3 + flare && av <= hw + 1 + flare) {
-        return [av >= hw + 1 + flare && d2 <= (s.wheelR * 0.55) ** 2 ? RIM : TYRE, 'other'];
+        return [av >= hw + 1 + flare && d2 <= (s.wheelR * 0.55) ** 2 ? rim : TYRE, 'other'];
       }
     }
     const top = bodyTop(u);
@@ -235,11 +240,15 @@ function buildModel(carId: number): Voxel[] {
       if ((front || rear) && z <= s.clearance + 1) return [s.kind === 'muscle' || s.kind === 'sedan' ? CHROME : DARK, 'other'];
       if (front && av <= 6 && z <= s.clearance + 3) return [DARK, 'other']; // calandre
       if (front && av >= 6 && av <= hw - 1 && z >= top - 3 && z <= top - 2) return [HEAD, 'other'];
+      // Coupé japonais : deux paires de feux ronds séparées par un trait noir.
+      if (rear && s.kind === 'gtr' && Math.abs(av - 8) < 1 && z >= top - 3 && z <= top - 2) return [DARK, 'other'];
       if (rear && av >= 5 && av <= hw - 1 && z >= top - 3 && z <= top - 2) return [TAIL, 'other'];
       // Passages de roue.
       for (const wu of wheelU) if ((u - wu) ** 2 + (z - s.wheelR) ** 2 <= (s.wheelR + 1) ** 2 && av >= hw - 4 + flare) return null;
       if (z === s.clearance) return [DARK, 'other'];
       if (twoTone && z <= s.clearance + 3) return [accent, 'other'];
+      // Prise d'air du capot, d'un ton plus sombre.
+      if (s.kind === 'gtr' && z >= top - 0.5 && u > 7 && u < 16 && av <= 5) return [[main[0] * 0.55, main[1] * 0.55, main[2] * 0.55], 'other'];
       return [main, 'body'];
     }
     // Prise d'air sur le capot des américaines.

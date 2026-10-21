@@ -37,6 +37,7 @@ const CAR_CLASS: CarClass['id'][] = [
   'equilibree', 'agile', 'vitesse', 'equilibree',
   'lourde', 'lourde', 'vitesse', 'lourde',
   'drift', 'drift', 'drift', 'drift',
+  'vitesse',
 ];
 
 export function carClass(carId: number): CarClass {

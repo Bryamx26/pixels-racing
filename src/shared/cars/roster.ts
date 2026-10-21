@@ -21,6 +21,12 @@ export const DRIFT_CARS: CarDef[] = [
   { id: 19, name: 'Sakura', color: '#ff7a1a', accent: '#1c1c22', drift: true },
 ];
 
-export const CARS: readonly CarDef[] = [...ATLAS_CARS, ...DRIFT_CARS];
+/** Voitures ajoutées ensuite (sans sprite non plus). */
+export const EXTRA_CARS: CarDef[] = [
+  // Coupé japonais bleu à grand aileron, inspiré d'une photo envoyée par bryam.
+  { id: 20, name: 'Raijin', color: '#2458f0', accent: '#1c1c22' },
+];
+
+export const CARS: readonly CarDef[] = [...ATLAS_CARS, ...DRIFT_CARS, ...EXTRA_CARS];
 /** Nombre de voitures dessinées sur la planche de sprites. */
 export const ATLAS_COUNT = ATLAS_CARS.length;
