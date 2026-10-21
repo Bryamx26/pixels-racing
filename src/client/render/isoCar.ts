@@ -23,10 +23,10 @@ const SW = 68, SH = 58;
 /** Point au sol sous le centre de la voiture, dans le sprite. */
 const AX = SW / 2, AY = 38;
 /**
- * Taille d'un pixel de la voiture en pixels de jeu : le sprite est rendu en basse
- * définition puis agrandi sans lissage, pour des voitures en gros pixels.
+ * Taille d'un pixel de la voiture en pixels de jeu (1 = pleine définition ; 2 ou plus :
+ * sprite rendu en basse définition puis agrandi sans lissage, en gros pixels).
  */
-const PIX = 2;
+const PIX = 1;
 const LW = SW / PIX, LH = SH / PIX;
 
 type RGB = [number, number, number];
@@ -339,7 +339,7 @@ function renderAngle(model: Voxel[], a: number): HTMLCanvasElement {
     img.data[o * 4 + 2] = Math.min(255, vx.c[2] * k);
     img.data[o * 4 + 3] = 255;
   }
-  // Contour sombre d'un gros pixel, pour que la voiture se détache du décor.
+  // Contour sombre d'un pixel du sprite, pour que la voiture se détache du décor.
   const d = img.data;
   const out = new Uint8ClampedArray(d);
   const solid = (X: number, Y: number) => X >= 0 && Y >= 0 && X < LW && Y < LH && d[(Y * LW + X) * 4 + 3] > 0;
