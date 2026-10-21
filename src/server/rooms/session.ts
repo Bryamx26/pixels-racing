@@ -11,6 +11,8 @@ export class Session {
   readonly token = randomBytes(16).toString('hex');
   ws: WebSocket | null = null;
   roomCode: string | null = null;
+  /** Monde ouvert rejoint (null : aucun). */
+  roamId: string | null = null;
   disconnectTimer: NodeJS.Timeout | null = null;
 
   constructor(public name: string) {}

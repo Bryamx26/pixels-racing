@@ -1,6 +1,7 @@
 import type { PackedInput } from '../input';
 import type { RaceEvent, RaceState } from '../race/race';
 import type { TrackDef } from '../track/tracks';
+import type { RoamEvent, RoamState } from '../world/roam';
 
 /** Messages client → serveur. */
 export type ClientMsg =
@@ -12,7 +13,11 @@ export type ClientMsg =
   | { t: 'car'; carId: number }
   | { t: 'start' }
   | { t: 'input'; inputs: PackedInput[] }
-  | { t: 'ping'; c: number };
+  | { t: 'ping'; c: number }
+  /** Monde ouvert : rejoindre la balade libre, se téléporter, annoncer un exploit. */
+  | { t: 'roam'; carId: number; spawn?: string }
+  | { t: 'warp'; x: number; y: number; a: number }
+  | { t: 'brag'; text: string };
 
 export interface LobbyPlayer {
   id: string;
@@ -42,7 +47,9 @@ export type ServerMsg =
   | { t: 'error'; message: string }
   | { t: 'info'; message: string }
   | { t: 'snap'; state: RaceState; ack: number; events: RaceEvent[] }
-  | { t: 'pong'; c: number };
+  | { t: 'pong'; c: number }
+  | { t: 'rsnap'; state: RoamState; ack: number; events: RoamEvent[] }
+  | { t: 'roamLeft' };
 
 /** Une ligne du classement des meilleurs tours. */
 export interface LapRecord {

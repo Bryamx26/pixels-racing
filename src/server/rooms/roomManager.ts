@@ -4,6 +4,7 @@ import { validateTrack, MAX_POINTS } from '../../shared/track/validate';
 import type { Records } from '../records/records';
 import type { ClientMsg } from '../../shared/net/protocol';
 import { Room } from './room';
+import { RoamRoom } from './roamRoom';
 import { SessionRegistry, type Session } from './session';
 
 /** Alphabet sans caractères ambigus (0/O, 1/I…). */
@@ -18,6 +19,8 @@ const validLaps = (n: unknown) =>
 export class RoomManager {
   readonly rooms = new Map<string, Room>();
   readonly sessions = new SessionRegistry();
+  readonly roams = new Map<string, RoamRoom>();
+  private roamCounter = 0;
 
   constructor(private records: Records) {}
 
@@ -33,12 +36,71 @@ export class RoomManager {
     return s.roomCode ? this.rooms.get(s.roomCode) : undefined;
   }
 
+  roamOf(s: Session): RoamRoom | undefined {
+    return s.roamId ? this.roams.get(s.roamId) : undefined;
+  }
+
+  private leaveRoam(s: Session): void {
+    const r = this.roamOf(s);
+    if (!r) return;
+    r.remove(s.id);
+    if (r.empty) {
+      this.roams.delete(r.id);
+      console.log(`[monde ${r.id}] fermé`);
+    }
+  }
+
+  /** Messages du monde ouvert ; vrai si le message a été traité ici. */
+  private handleRoam(s: Session, msg: ClientMsg): boolean {
+    const roam = this.roamOf(s);
+    switch (msg.t) {
+      case 'roam': {
+        const room = this.roomOf(s);
+        if (room) {
+          room.remove(s.id);
+          this.cleanup(room);
+        }
+        this.leaveRoam(s);
+        let r = [...this.roams.values()].find((x) => !x.isFull);
+        if (!r) {
+          r = new RoamRoom('M' + ++this.roamCounter);
+          this.roams.set(r.id, r);
+          console.log(`[monde ${r.id}] ouvert`);
+        }
+        r.add(s, typeof msg.carId === 'number' ? msg.carId : 0, msg.spawn);
+        return true;
+      }
+      case 'warp':
+        roam?.warp(s.id, msg.x, msg.y, msg.a);
+        return true;
+      case 'brag':
+        roam?.brag(s.id, msg.text);
+        return true;
+      case 'leave':
+        if (!roam) return false;
+        this.leaveRoam(s);
+        s.send({ t: 'roamLeft' });
+        return true;
+      case 'car':
+        if (!roam) return false;
+        if (typeof msg.carId === 'number') roam.setCar(s.id, msg.carId);
+        return true;
+      case 'input':
+        if (!roam) return false;
+        if (Array.isArray(msg.inputs)) roam.onInputs(s.id, msg.inputs.slice(0, 30));
+        return true;
+    }
+    return false;
+  }
+
   handle(s: Session, msg: ClientMsg): void {
+    if (this.handleRoam(s, msg)) return;
     const room = this.roomOf(s);
     const fail = (message: string) => s.send({ t: 'error', message });
 
     switch (msg.t) {
       case 'create': {
+        this.leaveRoam(s);
         if (room) room.remove(s.id);
         this.cleanup(room);
         const r = new Room(this.newCode(), validTrack(msg.trackId) ?? TRACKS[0].id, validLaps(msg.laps) ?? DEFAULT_LAPS, s, this.records);
@@ -53,6 +115,7 @@ export class RoomManager {
         if (r === room) return;
         if (r.phase !== 'lobby') return fail('La course a déjà commencé dans cette salle.');
         if (r.isFull) return fail('La salle est pleine.');
+        this.leaveRoam(s);
         if (room) {
           room.remove(s.id);
           this.cleanup(room);
@@ -114,6 +177,13 @@ export class RoomManager {
   /** Connexion coupée : on garde la place du joueur pendant RECONNECT_GRACE_MS (pilote auto en course). */
   onDisconnect(s: Session): void {
     s.ws = null;
+    if (this.roamOf(s)) {
+      s.disconnectTimer = setTimeout(() => {
+        this.leaveRoam(s);
+        this.sessions.delete(s);
+      }, RECONNECT_GRACE_MS);
+      return;
+    }
     const room = this.roomOf(s);
     if (!room) {
       this.sessions.delete(s);
@@ -131,6 +201,7 @@ export class RoomManager {
   onReconnect(s: Session): void {
     if (s.disconnectTimer) clearTimeout(s.disconnectTimer);
     s.disconnectTimer = null;
+    if (this.roamOf(s)) return;
     const room = this.roomOf(s);
     if (room) {
       room.setConnected();
@@ -148,5 +219,6 @@ export class RoomManager {
 
   tick(): void {
     for (const r of this.rooms.values()) r.tick();
+    for (const r of this.roams.values()) r.tick();
   }
 }

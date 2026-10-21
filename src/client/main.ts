@@ -16,6 +16,8 @@ import { Controls, isTouchDevice } from './input/controls';
 import { Connection } from './net/connection';
 import { fetchRecords, submitRecord } from './net/records';
 import { Renderer } from './render/renderer';
+import { LocalRoam, OnlineRoam } from './game/roamView';
+import { RoamMode } from './roam/roamMode';
 import { Hud } from './ui/hud';
 import * as ui from './ui/screens';
 
@@ -140,6 +142,11 @@ function showHome(): void {
       sound.unlock();
       showSolo('race');
     },
+    roam: () => {
+      readName();
+      sound.unlock();
+      showRoam();
+    },
     trial: () => {
       readName();
       sound.unlock();
@@ -213,6 +220,68 @@ function showSolo(mode: ui.SoloMode): void {
     },
   });
 }
+
+// ---------- Monde ouvert ----------
+let roam: RoamMode | null = null;
+let roamPending = false;
+
+function showRoam(): void {
+  ui.show(ui.roamScreen(prefs.carId), {
+    car: pickCar,
+    back: showHome,
+    solo: () => {
+      goFullscreen();
+      roamIsOnline = false;
+      ui.show('<div class="screen"><div class="title small">CHARGEMENT DU MONDE…</div></div>');
+      // Laisse l'écran de chargement s'afficher avant la génération du monde.
+      setTimeout(() => enterRoam(new LocalRoam(prefs.name || 'Pilote', prefs.carId, controls)), 50);
+    },
+    online: () => {
+      goFullscreen();
+      roamPending = true;
+      ui.show('<div class="screen"><div class="title small">CONNEXION…</div></div>');
+      online().send({ t: 'roam', carId: prefs.carId });
+    },
+  });
+}
+
+function enterRoam(view: LocalRoam | OnlineRoam): void {
+  race?.dispose();
+  race = null;
+  demo = null;
+  hud.show(false);
+  ui.clear();
+  roamPending = false;
+  roam = new RoamMode(view, {
+    canvas,
+    touchEl,
+    sound,
+    toast,
+    onQuit: leaveRoam,
+    onCar: (id) => {
+      prefs.carId = id;
+      store.set('car', String(id));
+    },
+    brag: (text) => {
+      if (view.online) conn?.send({ t: 'brag', text });
+    },
+    rtt: () => (view.online && conn ? conn.rtt : null),
+  });
+  if (touch && innerHeight > innerWidth) toast("Tourne ton téléphone à l'horizontale 📱", true);
+}
+
+function leaveRoam(): void {
+  if (!roam) return;
+  const wasOnline = roamOnline();
+  roam.dispose();
+  roam = null;
+  if (wasOnline) conn?.send({ t: 'leave' });
+  renderer.resize();
+  startDemo();
+  showHome();
+}
+const roamOnline = () => !!roam && roamIsOnline;
+let roamIsOnline = false;
 
 // ---------- Mode drift ----------
 let drift: DriftScore | null = null;
@@ -349,6 +418,7 @@ function onServer(msg: ServerMsg): void {
       toast(msg.message, true);
       return;
     case 'room': {
+      if (!msg.room && (roam || roamPending)) return;
       const wasIn = !!room;
       room = msg.room;
       if (!room) {
@@ -371,6 +441,14 @@ function onServer(msg: ServerMsg): void {
       }
       return;
     }
+    case 'rsnap':
+      if (roamPending && !roam && conn?.playerId) {
+        roamIsOnline = true;
+        enterRoam(new OnlineRoam(conn, controls, conn.playerId, msg.state));
+      }
+      return;
+    case 'roamLeft':
+      return;
     case 'snap':
       if (!race && room?.phase === 'race' && conn?.playerId) {
         ghost = null;
@@ -484,6 +562,11 @@ function soundEvents(events: RaceEvent[], myId: string, meX: number, meY: number
 function frame(now: number): void {
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
+  if (roam) {
+    roam.frame(now, dt);
+    requestAnimationFrame(frame);
+    return;
+  }
   const view = race ?? demo;
   if (view && !editor) {
     view.update(now);
@@ -558,6 +641,9 @@ if (new URLSearchParams(location.search).has('debug')) {
       },
       get room() {
         return room;
+      },
+      get roam() {
+        return roam;
       },
       controls,
       renderer,

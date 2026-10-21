@@ -5,6 +5,9 @@ Jeu de course en pixel art **isométrique**, **multijoueur en ligne** dans le na
 - Vue isométrique : voitures en voxels inspirées de vrais modèles (muscle car à prise d'air et pare-chocs chromés, sportive, citadine, berline, SUV, monster truck), vitres bleutées, phares, couleurs reprises des anciens designs. Elles sont dessinées un peu plus petites (la hitbox reste à 1/4 de la chaussée) avec une caméra légèrement reculée. Circuits entourés d'une ville en blocs et d'arbres, pont surélevé sur pilotis. Un décor qui cache ta voiture devient transparent.
 - 20 voitures en 5 familles : **Équilibrée**, **Vitesse** (pointe haute, moins d'adhérence), **Agile** (accélère et tourne mieux), **Lourde** (pousse les autres, encaisse mieux les chocs) et **Drift** (Kaido, Touge, Ronin, Sakura : propulsions à ailes et ailes élargies qui tiennent la glisse à l'accélérateur).
 - **Mode drift** (accueil → MODE DRIFT) : un coup de frein pour lancer la glisse, puis gaz et contre-braquage. Les points montent avec la vitesse et l'angle, le multiplicateur grimpe tant que la glisse s'enchaîne (×5 max), un mur fait perdre le combo. Record par circuit.
+- **Monde ouvert** (accueil → MONDE OUVERT), façon Forza Horizon : une carte de 20 000 × 20 000 avec Pixel City (rues en damier, tours, parc central), l'aérodrome (piste d'envol, hangars, avions, tour de contrôle), les docks et leur arène de drift (cônes, conteneurs), le Grand Parc (lac, pont, chemins de terre), la route de montagne en lacets des collines, la campagne, le village de Port-Joli et la plage, reliés par un périphérique et deux autoroutes. Seul ou **en ligne en balade libre** (jusqu'à 16 joueurs par monde, on entre et on sort quand on veut).
+  - 14 défis lancés en franchissant une arche : zones de drift (violet), arène de drift chronométrée, radars et zones de vitesse (bleu), sprints à points de passage (orange). Résultat en étoiles, record gardé, exploit annoncé aux autres joueurs en ligne.
+  - 30 panneaux bonus ★ à casser, carte plein écran (M) avec voyage rapide et itinéraire, minicarte, R pour se remettre sur la route.
 - 4 circuits : Circuit Néon, Anneau du Lac, **Le Grand Huit** (en huit avec un pont) et **Centre-Ville** (circuit urbain entre les immeubles, deux ponts sur la rivière, un pont surélevé et un parc avec étang), plus ton **circuit perso** fait dans l'éditeur.
 - Une voiture fait exactement **1/4 de la largeur de la chaussée** : quatre voitures de front, la piste est marquée en quatre voies.
 - Course solo contre 0 à 7 bots, ou salles privées en ligne par code (jusqu'à 8 pilotes, bots en option), lien d'invitation `/?salle=CODE`.
@@ -45,8 +48,9 @@ Docker : `docker compose up -d --build` (le classement est gardé dans le volume
 ## Organisation
 
 - `src/shared` : simulation commune client/serveur — physique (`cars/physics.ts`), circuits (`track/`), course, tours et bots (`race/`).
-- `src/server` : HTTP + WebSocket, salles par code, classement (`records/records.ts`, API `GET/POST /api/records`).
-- `src/client` : éditeur (`editor/`, vu de dessus), fantôme (`game/ghost.ts`), rendu isométrique (`render/iso*.ts`) en Canvas basse résolution agrandi sans lissage, HUD, écrans, commandes.
+- `src/shared/world` : monde ouvert — plan de la carte (`layout.ts`), revêtements et collisions avec le décor (`world.ts`), balade partagée (`roam.ts`), défis (`challenges.ts`).
+- `src/server` : HTTP + WebSocket, salles par code, mondes ouverts (`rooms/roamRoom.ts`), classement (`records/records.ts`, API `GET/POST /api/records`).
+- `src/client` : éditeur (`editor/`, vu de dessus), fantôme (`game/ghost.ts`), rendu isométrique (`render/iso*.ts`, monde ouvert cuit en tuiles à la demande dans `render/world*.ts`, interface dans `roam/`) en Canvas basse résolution agrandi sans lissage, HUD, écrans, commandes.
 - `tools/sprites/extract.py` : découpe la planche `voitures-sheet.png` en atlas (`pip install pillow numpy`).
 
 Ajouter un circuit : une entrée dans `src/shared/track/tracks.ts` (boucle de points de contrôle). `npm test` vérifie que la piste ne se chevauche pas, que les virages sont assez larges et que 8 bots bouclent la course ; il teste aussi le turbo, les objets et les dégâts.

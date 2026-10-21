@@ -9,6 +9,10 @@ import { CARS } from '../src/shared/cars/carAtlas';
 import { validateTrack } from '../src/shared/track/validate';
 import { carStats } from '../src/shared/cars/stats';
 import { DriftScore } from '../src/shared/race/driftScore';
+import { Surf, getWorld, type Pt } from '../src/shared/world/world';
+import { Roam } from '../src/shared/world/roam';
+import { ChallengeTracker, type ChallengeEvent } from '../src/shared/world/challenges';
+import { wrapAngle } from '../src/shared/math';
 
 let failed = 0;
 function test(name: string, fn: () => void) {
@@ -222,6 +226,79 @@ test('mode drift : la glisse rapporte des points, un mur fait perdre le combo', 
   let banked = null;
   for (let i = 0; i < 60 && !banked; i++) banked = sc.step(b, 0, 1 / 60);
   assert(banked?.type === 'banked' && sc.total > 0, 'combo non encaissé');
+});
+
+// ---------- Monde ouvert ----------
+const world = getWorld();
+const L = world.layout;
+
+test('monde ouvert : carte immense, lieux de départ libres, 30 panneaux, défis sur la route', () => {
+  assert(L.roads.length > 40 && L.blocks.length > 500 && L.trees.length > 3000, `${L.roads.length} routes, ${L.blocks.length} blocs, ${L.trees.length} arbres`);
+  for (const sp of L.spawns) assert(world.isFree(sp.x, sp.y), `départ ${sp.id} bloqué`);
+  assert(L.boards.length === 30, `${L.boards.length} panneaux`);
+  for (const ch of L.challenges) {
+    const s = world.surfAt(...ch.path[0]);
+    assert(s === Surf.Road || s === Surf.Dirt || s === Surf.Lot, `${ch.id} : départ sur ${s}`);
+  }
+});
+
+/** Pilote automatique qui suit un tracé (pour vérifier que les défis se terminent). */
+function drive(path: Pt[], start: Pt, a: number, ticks: number, carId = 3): ChallengeEvent[] {
+  const dense: Pt[] = [];
+  for (let i = 0; i + 1 < path.length; i++) {
+    const [ax, ay] = path[i], [bx, by] = path[i + 1];
+    const n = Math.max(1, Math.ceil(Math.hypot(bx - ax, by - ay) / 16));
+    for (let k = 0; k < n; k++) dense.push([ax + ((bx - ax) * k) / n, ay + ((by - ay) * k) / n]);
+  }
+  dense.push(path[path.length - 1]);
+  const roam = new Roam();
+  const car = roam.add('a', 'A', carId);
+  roam.warp('a', start[0], start[1], a);
+  const tr = new ChallengeTracker(L.challenges);
+  const out: ChallengeEvent[] = [];
+  let idx = 0;
+  for (let t = 0; t < ticks; t++) {
+    let best = idx, bd = Infinity;
+    for (let i = idx; i < Math.min(dense.length, idx + 60); i++) {
+      const d = Math.hypot(dense[i][0] - car.x, dense[i][1] - car.y);
+      if (d < bd) (bd = d), (best = i);
+    }
+    idx = best;
+    const sp = Math.hypot(car.vx, car.vy);
+    const tg = dense[Math.min(dense.length - 1, idx + 5 + Math.round(sp / 40))];
+    const diff = wrapAngle(Math.atan2(tg[1] - car.y, tg[0] - car.x) - car.a);
+    const sharp = Math.abs(diff) > 0.5 && sp > 170;
+    const ev = roam.step(new Map([['a', { throttle: sharp ? 0 : 1, brake: sharp ? 0.4 : 0, steer: Math.max(-1, Math.min(1, diff * 3)) }]]));
+    const wall = ev.reduce((m, e) => (e.type === 'wall' ? Math.max(m, e.power) : m), 0);
+    out.push(...tr.step(car, wall, 1 / 60));
+    if (out.some((e) => e.type === 'end' || e.type === 'fail')) break;
+  }
+  return out;
+}
+
+for (const id of ['piste', 'touge', 'equerre', 'sprint-campagne', 'sprint-centre', 'radar-avenue']) {
+  test(`monde ouvert : le défi « ${id} » se lance et se termine`, () => {
+    const ch = L.challenges.find((c) => c.id === id)!;
+    const [x0, y0] = ch.path[0], [x1, y1] = ch.path[1];
+    const a = Math.atan2(y1 - y0, x1 - x0);
+    const start: Pt = [x0 - Math.cos(a) * 200, y0 - Math.sin(a) * 200];
+    const ev = drive([start, ...ch.path], start, a, 60 * 200);
+    assert(ev[0]?.type === 'start' || ch.kind === 'speedtrap', `pas de départ : ${ev.map((e) => e.type).join(',')}`);
+    const end = ev.find((e) => e.type === 'end' || e.type === 'fail');
+    assert(end?.type === 'end', `fin : ${end ? (end as { reason?: string }).reason ?? end.type : 'aucune'}`);
+    console.log(`       ${ch.name} : ${Math.round(end.value * 10) / 10} (${end.stars} étoile(s))`);
+  });
+}
+
+test('monde ouvert : on ne traverse ni les bâtiments ni le lac', () => {
+  const roam = new Roam();
+  const car = roam.add('a', 'A', 3);
+  roam.warp('a', 5200, 9500, Math.PI / 2 + 0.6);
+  for (let t = 0; t < 600; t++) roam.step(new Map([['a', { throttle: 1, brake: 0, steer: 0 }]]));
+  assert(world.surfAt(car.x, car.y) !== Surf.Water, `dans l'eau en ${Math.round(car.x)},${Math.round(car.y)}`);
+  roam.warp('a', 14000, 4500, Math.PI / 2);
+  for (let t = 0; t < 300; t++) roam.step(new Map([['a', { throttle: 1, brake: 0, steer: 0 }]]));
+  assert(car.y < 4600, `à travers un immeuble : y = ${Math.round(car.y)}`);
 });
 
 if (failed) {

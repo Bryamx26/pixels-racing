@@ -105,15 +105,50 @@ export function forwardSpeed(b: CarBody): number {
   return b.vx * Math.cos(b.a) + b.vy * Math.sin(b.a);
 }
 
-/** Avance une voiture d'un pas (`dt` s). */
+/** Avance une voiture d'un pas (`dt` s) sur un circuit. */
 export function stepCar(b: CarBody, inp: CarInput, track: Track, dt: number, mods: StepMods = {}): StepResult {
+  const offroad = Math.abs(lateralOffset(track, b.idx, b.x, b.y)) > OFFROAD_DIST;
+  const res = stepDynamics(b, inp, dt, mods, offroad);
+  // Mur de pneus : on replace la voiture et on annule la vitesse sortante (léger rebond).
+  b.idx = nearestSample(track, b.x, b.y, b.idx);
+  let wallPower = 0;
+  const lat = lateralOffset(track, b.idx, b.x, b.y);
+  const wall = Math.abs(lat) > WALL_LIMIT;
+  if (wall) {
+    const nx = -track.tys[b.idx] * Math.sign(lat), ny = track.txs[b.idx] * Math.sign(lat);
+    wallPower = hitWall(b, nx, ny, Math.abs(lat) - WALL_LIMIT, mods);
+  }
+  return { ...res, wall, wallPower };
+}
+
+/**
+ * Choc contre un obstacle de normale sortante (nx, ny) (dirigée vers l'obstacle), avec une
+ * pénétration `over` : on replace la voiture et on renvoie la vitesse d'impact.
+ */
+export function hitWall(b: CarBody, nx: number, ny: number, over: number, mods: StepMods): number {
+  b.x -= nx * over;
+  b.y -= ny * over;
+  const vn = b.vx * nx + b.vy * ny;
+  if (vn <= 0) return 0;
+  if (mods.damage && vn > 80) b.damage = Math.min(1, b.damage + vn / 2600 / (mods.stats ?? NEUTRAL).mass);
+  b.w *= 0.5;
+  b.vx -= nx * vn * 1.3;
+  b.vy -= ny * vn * 1.3;
+  b.vx *= 0.92;
+  b.vy *= 0.92;
+  return vn;
+}
+
+/**
+ * Moteur, adhérence et direction, sans les murs : commun aux circuits et au monde ouvert.
+ * `offroad` : roues dans l'herbe ou le sable ; `surfGrip` : adhérence du revêtement (terre < 1).
+ */
+export function stepDynamics(b: CarBody, inp: CarInput, dt: number, mods: StepMods, offroad: boolean, surfGrip = 1): StepResult {
   const draft = mods.draft ?? 0;
   const st = mods.stats ?? NEUTRAL;
   const cos = Math.cos(b.a), sin = Math.sin(b.a);
   let vf = b.vx * cos + b.vy * sin;
   let vr = -b.vx * sin + b.vy * cos;
-  const offroad = Math.abs(lateralOffset(track, b.idx, b.x, b.y)) > OFFROAD_DIST;
-
   // Tête-à-queue sur l'huile : plus de commandes le temps de reprendre la main.
   const spinning = b.spin > 0;
   if (spinning) {
@@ -165,14 +200,14 @@ export function stepCar(b: CarBody, inp: CarInput, track: Track, dt: number, mod
   const sp = Math.abs(vf);
   const steerAngle = inp.steer * CAR.maxSteer * (1 - 0.45 * clamp(sp / CAR.maxSpeed, 0, 1));
   let target = (vf * Math.tan(steerAngle)) / CAR.wheelbase;
-  const gripMul = (drift ? 1.6 : offroad ? 0.6 : 1) * st.grip;
+  const gripMul = (drift ? 1.6 : offroad ? 0.6 : 1) * st.grip * surfGrip;
   const maxYaw = (CAR.lateralGrip * gripMul) / Math.max(sp, 1);
   target = clamp(target, -maxYaw, maxYaw) * (drift ? 1.3 + 0.35 * dk : 1);
   // Inertie : la rotation rejoint la consigne progressivement (et plus lentement en glisse).
   if (spinning) b.w += (Math.sign(b.w || 1) * 9 - b.w) * Math.min(1, 6 * dt);
   else b.w += (target - b.w) * Math.min(1, CAR.yawResponse * (drift ? 0.5 : 1) * dt);
   // Adhérence : la vitesse latérale disparaît vite, sauf en dérapage (et presque plus sur l'huile).
-  const lateral = spinning ? CAR.grip * 0.15 : drift ? CAR.driftGrip * (1 - 0.3 * dk) : offroad ? CAR.grip * 0.6 : CAR.grip * st.grip;
+  const lateral = (spinning ? CAR.grip * 0.15 : drift ? CAR.driftGrip * (1 - 0.3 * dk) : offroad ? CAR.grip * 0.6 : CAR.grip * st.grip) * surfGrip;
   vr *= Math.exp(-lateral * dt);
 
   b.vx = vf * cos - vr * sin;
@@ -180,30 +215,7 @@ export function stepCar(b: CarBody, inp: CarInput, track: Track, dt: number, mod
   b.a += b.w * dt;
   b.x += b.vx * dt;
   b.y += b.vy * dt;
-
-  // Mur de pneus : on replace la voiture et on annule la vitesse sortante (léger rebond).
-  b.idx = nearestSample(track, b.x, b.y, b.idx);
-  let wall = false;
-  let wallPower = 0;
-  const lat = lateralOffset(track, b.idx, b.x, b.y);
-  if (Math.abs(lat) > WALL_LIMIT) {
-    wall = true;
-    const nx = -track.tys[b.idx] * Math.sign(lat), ny = track.txs[b.idx] * Math.sign(lat);
-    const over = Math.abs(lat) - WALL_LIMIT;
-    b.x -= nx * over;
-    b.y -= ny * over;
-    const vn = b.vx * nx + b.vy * ny;
-    if (vn > 0) {
-      wallPower = vn;
-      if (mods.damage && vn > 80) b.damage = Math.min(1, b.damage + vn / 2600 / st.mass);
-      b.w *= 0.5;
-      b.vx -= nx * vn * 1.3;
-      b.vy -= ny * vn * 1.3;
-      b.vx *= 0.92;
-      b.vy *= 0.92;
-    }
-  }
-  return { wall, wallPower, offroad, drift, boostStarted, boosting };
+  return { wall: false, wallPower: 0, offroad, drift, boostStarted, boosting };
 }
 
 /** Les voitures interagissent seulement si elles sont sur la même portion de piste (pas sous un pont). */

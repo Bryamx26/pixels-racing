@@ -35,18 +35,18 @@ export interface IsoArt {
 }
 
 // ---------- Couleurs ----------
-function hex(h: string): [number, number, number] {
+export function hex(h: string): [number, number, number] {
   const v = parseInt(h.slice(1), 16);
   return [(v >> 16) & 255, (v >> 8) & 255, v & 255];
 }
-function shade(h: string, k: number): string {
+export function shade(h: string, k: number): string {
   const [r, g, b] = hex(h);
   const f = (v: number) => Math.max(0, Math.min(255, Math.round(v * k)));
   return `rgb(${f(r)},${f(g)},${f(b)})`;
 }
 
 /** Motif de bitume granuleux. */
-function asphaltPattern(ctx: CanvasRenderingContext2D): CanvasPattern {
+export function asphaltPattern(ctx: CanvasRenderingContext2D): CanvasPattern {
   const c = document.createElement('canvas');
   c.width = c.height = 32;
   const g = c.getContext('2d')!;
@@ -119,9 +119,9 @@ interface BoxOpts {
 }
 
 /** Point écran (dans le repère du canevas courant, décalé de ox, oy). */
-const P = (ox: number, oy: number, x: number, y: number, z: number): Pt => [isoX(x, y) + ox, isoY(x, y, z) + oy];
+export const P = (ox: number, oy: number, x: number, y: number, z: number): Pt => [isoX(x, y) + ox, isoY(x, y, z) + oy];
 
-function poly(g: CanvasRenderingContext2D, pts: Pt[], fill: string): void {
+export function poly(g: CanvasRenderingContext2D, pts: Pt[], fill: string): void {
   g.beginPath();
   pts.forEach(([x, y], i) => (i ? g.lineTo(x, y) : g.moveTo(x, y)));
   g.closePath();
@@ -130,7 +130,7 @@ function poly(g: CanvasRenderingContext2D, pts: Pt[], fill: string): void {
 }
 
 /** Pavé orienté posé en (cx, cy), de cap `ang`, w × d au sol, de z0 à z0 + h. */
-function box(
+export function box(
   g: CanvasRenderingContext2D,
   ox: number,
   oy: number,
@@ -224,7 +224,7 @@ function box(
   }
 }
 
-function tree(g: CanvasRenderingContext2D, sx: number, sy: number, r: number, rnd: () => number): void {
+export function tree(g: CanvasRenderingContext2D, sx: number, sy: number, r: number, rnd: () => number): void {
   g.fillStyle = 'rgba(0,0,0,0.25)';
   g.beginPath();
   g.ellipse(sx + 4, sy + 1, r * 0.9, r * 0.45, 0, 0, Math.PI * 2);

@@ -82,6 +82,9 @@ export function homeScreen(name: string, joinCode: string, autoGas: boolean, mut
     <p class="subtitle">Course pixel art en ligne · PC et mobile</p>
     <label class="field">Ton pseudo<input data-a="name" id="name" maxlength="12" value="${esc(name)}" placeholder="Pilote" autocomplete="off"></label>
     <div class="row">
+      <button class="roam-btn" data-a="roam">MONDE OUVERT</button>
+    </div>
+    <div class="row">
       <button data-a="solo">COURSE SOLO</button>
       <button data-a="trial">CONTRE-LA-MONTRE</button>
       <button data-a="drift">MODE DRIFT</button>
@@ -100,6 +103,21 @@ export function homeScreen(name: string, joinCode: string, autoGas: boolean, mut
       <label class="check"><input type="checkbox" data-a="mute" ${muted ? 'checked' : ''}> Couper le son</label>
     </div>
     ${KEYS_HELP}
+  </div>`;
+}
+
+/** Monde ouvert : choix de la voiture, puis seul ou avec les autres joueurs connectés. */
+export function roamScreen(carId: number): string {
+  return `<div class="screen">
+    <div class="title small">MONDE OUVERT</div>
+    <p class="subtitle">Une immense carte libre : Pixel City, l'aérodrome, les docks et leur arène de drift, le Grand Parc, les collines, la campagne et la plage.
+    Franchis les arches pour lancer les défis (zones de drift, radars, zones de vitesse, sprints) et casse les 30 panneaux bonus.</p>
+    ${carPicker(carId)}
+    <div class="row">
+      <button class="secondary" data-a="back">RETOUR</button>
+      <button data-a="solo">ROULER SEUL</button>
+      <button data-a="online">EN LIGNE (LIBRE)</button>
+    </div>
   </div>`;
 }
 
