@@ -1,5 +1,5 @@
 import { CAR_LENGTH, CAR_WIDTH } from '../../shared/constants';
-import { CARS } from '../../shared/cars/carAtlas';
+import { CARS } from '../../shared/cars/roster';
 import { lerp } from '../../shared/math';
 import type { RaceEvent, RaceState, Racer } from '../../shared/race/race';
 import { nearestSample, type Track } from '../../shared/track/track';
@@ -56,10 +56,10 @@ export class Renderer {
     addEventListener('resize', () => this.resize());
   }
 
-  /** Zoom choisi pour voir au moins ~500 × 300 pixels de scène, quel que soit l'écran. */
+  /** Zoom choisi pour voir au moins ~550 × 330 pixels de scène, quel que soit l'écran. */
   resize(): void {
     const w = innerWidth, h = innerHeight;
-    const zoom = Math.max(0.6, Math.min(h / 300, w / 500));
+    const zoom = Math.max(0.6, Math.min(h / 330, w / 550));
     this.canvas.width = Math.ceil(w / zoom);
     this.canvas.height = Math.ceil(h / zoom);
     this.ctx.imageSmoothingEnabled = false;

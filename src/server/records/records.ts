@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { CAR } from '../../shared/cars/physics';
-import { CARS } from '../../shared/cars/carAtlas';
+import { CARS } from '../../shared/cars/roster';
 import { TICK_RATE } from '../../shared/constants';
 import { getTrack } from '../../shared/track/track';
 import { isOfficialTrack } from '../../shared/track/tracks';

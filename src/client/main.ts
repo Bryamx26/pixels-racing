@@ -1,4 +1,4 @@
-import { CARS } from '../shared/cars/carAtlas';
+import { CARS } from '../shared/cars/roster';
 import { CAR } from '../shared/cars/physics';
 import { COUNTDOWN_TICKS, DEFAULT_LAPS } from '../shared/constants';
 import { formatTime, type Entrant, type RaceEvent } from '../shared/race/race';
@@ -8,6 +8,7 @@ import { validateTrack } from '../shared/track/validate';
 import { Sound } from './audio';
 import { Editor, loadCustom } from './editor/editor';
 import { Ghost } from './game/ghost';
+import { DriftScore, type DriftEvent } from '../shared/race/driftScore';
 import { LocalRace } from './game/localRace';
 import { OnlineRace } from './game/onlineRace';
 import type { RaceView } from './game/raceView';
@@ -89,6 +90,8 @@ interface SoloConfig {
   bots: number;
   items: boolean;
   trial: boolean;
+  /** Mode drift : seul en piste, score de glisse. */
+  drift?: boolean;
 }
 let lastSolo: SoloConfig | null = null;
 
@@ -135,12 +138,17 @@ function showHome(): void {
     solo: () => {
       readName();
       sound.unlock();
-      showSolo(false);
+      showSolo('race');
     },
     trial: () => {
       readName();
       sound.unlock();
-      showSolo(true);
+      showSolo('trial');
+    },
+    drift: () => {
+      readName();
+      sound.unlock();
+      showSolo('drift');
     },
     create: () => {
       goFullscreen();
@@ -178,26 +186,49 @@ function pickCar(el: HTMLElement): void {
   document.getElementById('car-info')!.outerHTML = ui.carInfo(prefs.carId);
 }
 
-function showSolo(trial: boolean): void {
-  const best = Ghost.bestTicks(prefs.trackId);
-  ui.show(
-    ui.soloScreen(prefs.carId, prefs.trackId, prefs.laps, prefs.bots, prefs.items, customDef, trial, best ? formatTime(best) : '--'),
-    {
-      car: pickCar,
-      track: (el) => {
-        store.set('track', (prefs.trackId = (el as HTMLSelectElement).value));
-        if (trial) showSolo(true);
-      },
-      laps: (el) => store.set('laps', String((prefs.laps = Number((el as HTMLSelectElement).value)))),
-      bots: (el) => store.set('bots', String((prefs.bots = Number((el as HTMLSelectElement).value)))),
-      items: (el) => store.set('items', (prefs.items = (el as HTMLInputElement).checked) ? '1' : '0'),
-      back: showHome,
-      go: () => {
-        goFullscreen();
-        startSolo({ trackId: prefs.trackId, laps: prefs.laps, bots: trial ? 0 : prefs.bots, items: !trial && prefs.items, trial });
-      },
+function showSolo(mode: ui.SoloMode): void {
+  const trial = mode !== 'race';
+  const tBest = Ghost.bestTicks(prefs.trackId);
+  const best = mode === 'drift' ? driftBest(prefs.trackId).toLocaleString('fr-FR') : tBest ? formatTime(tBest) : '--';
+  ui.show(ui.soloScreen(prefs.carId, prefs.trackId, prefs.laps, prefs.bots, prefs.items, customDef, mode, best), {
+    car: pickCar,
+    track: (el) => {
+      store.set('track', (prefs.trackId = (el as HTMLSelectElement).value));
+      if (trial) showSolo(mode);
     },
-  );
+    laps: (el) => store.set('laps', String((prefs.laps = Number((el as HTMLSelectElement).value)))),
+    bots: (el) => store.set('bots', String((prefs.bots = Number((el as HTMLSelectElement).value)))),
+    items: (el) => store.set('items', (prefs.items = (el as HTMLInputElement).checked) ? '1' : '0'),
+    back: showHome,
+    go: () => {
+      goFullscreen();
+      startSolo({
+        trackId: prefs.trackId,
+        laps: prefs.laps,
+        bots: trial ? 0 : prefs.bots,
+        items: !trial && prefs.items,
+        trial: mode === 'trial',
+        drift: mode === 'drift',
+      });
+    },
+  });
+}
+
+// ---------- Mode drift ----------
+let drift: DriftScore | null = null;
+let driftWall = 0;
+const driftBest = (trackId: string) => Number(store.get('drift.' + trackId, '0'));
+
+function driftEvent(e: DriftEvent | null): void {
+  if (!e) return;
+  const fmt = e.points.toLocaleString('fr-FR');
+  if (e.type === 'banked') {
+    hud.message(`+${fmt}`, 900, true);
+    sound.beep(e.points > 3000 ? 1320 : 990, 0.12, 'triangle', 0.09);
+  } else {
+    hud.message(`COMBO PERDU (−${fmt})`, 1200, true);
+    sound.beep(150, 0.35, 'sawtooth', 0.1);
+  }
 }
 
 function startSolo(cfg: SoloConfig): void {
@@ -210,10 +241,11 @@ function startSolo(cfg: SoloConfig): void {
   ];
   // Le joueur part en fond de grille : il faut remonter !
   entrants.reverse();
-  const view = new LocalRace(cfg.trackId, cfg.laps, entrants, 'me', controls, { items: cfg.items, damage: !cfg.trial });
+  const view = new LocalRace(cfg.trackId, cfg.laps, entrants, 'me', controls, { items: cfg.items, damage: !cfg.trial && !cfg.drift });
   ghost = new Ghost(cfg.trackId, 'me');
   view.onTick = (s) => ghost?.record(s);
   enterRace(view);
+  drift = cfg.drift ? new DriftScore() : null;
 }
 
 function openEditor(): void {
@@ -225,6 +257,7 @@ function openEditor(): void {
       closeEditor();
       prefs.trackId = def.id;
       startSolo({ trackId: def.id, laps: 2, bots: 3, items: prefs.items, trial: false });
+      drift = null;
     },
     () => {
       closeEditor();
@@ -341,6 +374,7 @@ function onServer(msg: ServerMsg): void {
     case 'snap':
       if (!race && room?.phase === 'race' && conn?.playerId) {
         ghost = null;
+        drift = null;
         enterRace(new OnlineRace(conn, controls, conn.playerId, msg.state));
       }
       return;
@@ -367,6 +401,7 @@ function enterRace(view: RaceView): void {
 function leaveRace(): void {
   race?.dispose();
   race = null;
+  drift = null;
   ghost = null;
   hud.show(false);
   touchEl.hidden = true;
@@ -462,6 +497,23 @@ function frame(now: number): void {
       hud.update(race.track, state, race.myId, dt, race.online && conn ? { rtt: conn.rtt } : undefined);
       const me = state.racers.find((r) => r.id === race!.myId);
       soundEvents(events, race.myId, me?.x ?? 0, me?.y ?? 0);
+      // Mode drift : score de glisse, encaissé à l'arrivée.
+      let driftResult: ui.DriftResult | undefined;
+      if (drift && me) {
+        for (const e of events) if (e.type === 'wall' && e.id === race.myId) driftWall = Math.max(driftWall, e.power);
+        if (state.phase === 'race' && me.finishTick < 0 && !race.paused) {
+          driftEvent(drift.step(me, driftWall, dt));
+          driftWall = 0;
+        }
+        if (events.some((e) => e.type === 'finish' && e.id === race!.myId)) driftEvent(drift.bank());
+        const best = driftBest(state.trackId);
+        hud.drift(drift, best);
+        if (state.phase === 'done') {
+          const record = drift.total > best;
+          if (record) store.set('drift.' + state.trackId, String(drift.total));
+          driftResult = { score: drift.total, best: Math.max(best, drift.total), bestCombo: drift.bestCombo, record };
+        }
+      } else hud.drift(null, 0);
       for (const e of events) {
         if (e.type === 'lap' && e.id === race.myId && !race.online) onMyLap(race, e.ticks);
         if (e.type === 'finish' && e.id === race.myId && !race.online) onMyLap(race, e.lapTicks);
@@ -477,7 +529,7 @@ function frame(now: number): void {
       if (state.phase === 'done' && !resultsShown) {
         resultsShown = true;
         touchEl.hidden = true;
-        ui.show(ui.resultsScreen(race.state, race.myId, race.online), {
+        ui.show(ui.resultsScreen(race.state, race.myId, race.online, driftResult), {
           again: () => lastSolo && startSolo(lastSolo),
           menu: () => {
             leaveRace();

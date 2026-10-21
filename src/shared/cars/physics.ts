@@ -121,7 +121,11 @@ export function stepCar(b: CarBody, inp: CarInput, track: Track, dt: number, mod
     inp = { throttle: 0, brake: 0, steer: 0 };
   }
   // Coup de frein lancé à grande vitesse : l'arrière décroche et la voiture dérape.
-  const drift = !spinning && inp.brake > 0.05 && vf > CAR.driftSpeed;
+  // Une voiture de drift décroche plus tôt et garde la glisse tant qu'on reste sur
+  // l'accélérateur avec la voiture en travers (« power slide »).
+  const dk = st.drift ?? 0;
+  const powerSlide = dk > 0 && inp.throttle > 0.3 && vf > 120 && Math.abs(vr) > vf * 0.22;
+  const drift = !spinning && ((inp.brake > 0.05 && vf > CAR.driftSpeed * (1 - 0.35 * dk)) || powerSlide);
 
   // Turbo : la jauge se vide d'un coup en temps de turbo.
   let boostStarted = false;
@@ -141,7 +145,7 @@ export function stepCar(b: CarBody, inp: CarInput, track: Track, dt: number, mod
     st.top * (1 + CAR.draftTopSpeed * draft + (boosting ? CAR.boostTopSpeed : 0)) * (1 - CAR.damageTop * dmg);
 
   // Moteur, frein, marche arrière.
-  if (inp.brake > 0.05) {
+  if (inp.brake > 0.05 && !(powerSlide && inp.throttle > 0.3)) {
     if (vf > 10) vf = Math.max(0, vf - CAR.brake * inp.brake * dt);
     else vf = Math.max(-CAR.reverseMax, vf - CAR.reverseAccel * inp.brake * dt);
   } else if (inp.throttle > 0.05 || boosting) {
@@ -163,12 +167,12 @@ export function stepCar(b: CarBody, inp: CarInput, track: Track, dt: number, mod
   let target = (vf * Math.tan(steerAngle)) / CAR.wheelbase;
   const gripMul = (drift ? 1.6 : offroad ? 0.6 : 1) * st.grip;
   const maxYaw = (CAR.lateralGrip * gripMul) / Math.max(sp, 1);
-  target = clamp(target, -maxYaw, maxYaw) * (drift ? 1.3 : 1);
+  target = clamp(target, -maxYaw, maxYaw) * (drift ? 1.3 + 0.35 * dk : 1);
   // Inertie : la rotation rejoint la consigne progressivement (et plus lentement en glisse).
   if (spinning) b.w += (Math.sign(b.w || 1) * 9 - b.w) * Math.min(1, 6 * dt);
   else b.w += (target - b.w) * Math.min(1, CAR.yawResponse * (drift ? 0.5 : 1) * dt);
   // Adhérence : la vitesse latérale disparaît vite, sauf en dérapage (et presque plus sur l'huile).
-  const lateral = spinning ? CAR.grip * 0.15 : drift ? CAR.driftGrip : offroad ? CAR.grip * 0.6 : CAR.grip * st.grip;
+  const lateral = spinning ? CAR.grip * 0.15 : drift ? CAR.driftGrip * (1 - 0.3 * dk) : offroad ? CAR.grip * 0.6 : CAR.grip * st.grip;
   vr *= Math.exp(-lateral * dt);
 
   b.vx = vf * cos - vr * sin;

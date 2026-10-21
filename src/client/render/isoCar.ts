@@ -1,26 +1,30 @@
-import { CARS, CAR_CELL_H, CAR_CELL_W } from '../../shared/cars/carAtlas';
+import { CAR_CELL_H, CAR_CELL_W } from '../../shared/cars/carAtlas';
+import { ATLAS_COUNT, CARS } from '../../shared/cars/roster';
 import { CAR_WIDTH } from '../../shared/constants';
-import { carClass } from '../../shared/cars/stats';
 import atlasUrl from '../assets/voitures.png';
 import { ISO, ISO_Z } from './iso';
 
 /**
- * Voitures en voxels : chaque voiture est un modèle 3D en petits cubes (caisse, habitacle
- * vitré, roues, phares, aileron…), dont la silhouette dépend de sa famille (coupé, bolide
- * bas, citadine nerveuse, gros 4×4) et les couleurs viennent de son dessin sur la planche.
- * Le modèle est rendu (tampon de profondeur + éclairage) sous 48 angles, à la demande.
+ * Voitures en voxels inspirées de vrais modèles : muscle car américaine, sportive à moteur
+ * arrière, compacte sportive, berline, gros 4×4, monster truck et japonaises de drift (larges
+ * ailes, grand aileron). Les couleurs ET la déco du dessus (bandes, flammes, damiers, logos)
+ * reprennent le dessin de chaque voiture sur la planche d'origine, plaqué sur le capot, le
+ * toit et le coffre. Rendu en tampon de profondeur avec éclairage, sous 48 angles, à la demande.
  */
 
 export const atlas = new Image();
 atlas.src = atlasUrl;
 
-export const CAR_HEIGHT = 17;
+/** Échelle d'affichage (les voitures sont un peu plus petites que leur zone de choc). */
+const SCALE = 0.86;
+export const CAR_HEIGHT = 15;
 const ANGLES = 48;
-const SW = 76, SH = 64;
+const SW = 68, SH = 58;
 /** Point au sol sous le centre de la voiture, dans le sprite. */
-const AX = SW / 2, AY = 42;
+const AX = SW / 2, AY = 38;
 
 type RGB = [number, number, number];
+type Kind = 'body' | 'other';
 interface Voxel {
   u: number;
   v: number;
@@ -30,22 +34,48 @@ interface Voxel {
   n: [number, number, number];
 }
 
-// ---------- Couleurs tirées du dessin de la voiture ----------
-function spritePixels(carId: number): Uint8ClampedArray | null {
-  if (!atlas.complete || !atlas.naturalWidth) return null;
+function parseHex(h: string): RGB {
+  const v = parseInt(h.slice(1), 16);
+  return [(v >> 16) & 255, (v >> 8) & 255, v & 255];
+}
+
+// ---------- Dessin d'origine (vu de dessus) ----------
+interface Art {
+  px: Uint8ClampedArray;
+  /** Emprise de la voiture dans la case. */
+  x0: number;
+  x1: number;
+  y0: number;
+  y1: number;
+}
+
+function spriteArt(carId: number): Art | null {
+  if (carId >= ATLAS_COUNT || !atlas.complete || !atlas.naturalWidth) return null;
   const c = document.createElement('canvas');
   c.width = CAR_CELL_W;
   c.height = CAR_CELL_H;
   const g = c.getContext('2d')!;
   g.drawImage(atlas, (carId % 4) * CAR_CELL_W, Math.floor(carId / 4) * CAR_CELL_H, CAR_CELL_W, CAR_CELL_H, 0, 0, CAR_CELL_W, CAR_CELL_H);
-  return g.getImageData(0, 0, CAR_CELL_W, CAR_CELL_H).data;
+  const px = g.getImageData(0, 0, CAR_CELL_W, CAR_CELL_H).data;
+  let x0 = CAR_CELL_W, x1 = 0, y0 = CAR_CELL_H, y1 = 0;
+  for (let y = 0; y < CAR_CELL_H; y++) {
+    for (let x = 0; x < CAR_CELL_W; x++) {
+      if (px[(y * CAR_CELL_W + x) * 4 + 3] < 128) continue;
+      x0 = Math.min(x0, x);
+      x1 = Math.max(x1, x);
+      y0 = Math.min(y0, y);
+      y1 = Math.max(y1, y);
+    }
+  }
+  return { px, x0, x1, y0, y1 };
 }
 
-/** Les deux couleurs saturées les plus présentes (carrosserie, puis accent). */
-function palette(carId: number): [RGB, RGB] {
-  const fallback = parseHex(CARS[carId]?.color ?? '#888');
-  const p = spritePixels(carId);
-  if (!p) return [fallback, [240, 240, 240]];
+/** Les deux couleurs saturées les plus présentes du dessin (carrosserie, accent). */
+function palette(carId: number, art: Art | null): [RGB, RGB] {
+  const def = CARS[carId];
+  const fallback = parseHex(def?.color ?? '#888888');
+  if (!art) return [fallback, parseHex(def?.accent ?? '#f0f0f0')];
+  const p = art.px;
   const bins = new Map<number, [number, number, number, number]>();
   for (let o = 0; o < p.length; o += 4) {
     if (p[o + 3] < 200) continue;
@@ -63,130 +93,191 @@ function palette(carId: number): [RGB, RGB] {
   const sorted = [...bins.values()].sort((a, b) => b[3] - a[3]).map((e) => [e[0] / e[3], e[1] / e[3], e[2] / e[3]] as RGB);
   const main = sorted[0] ?? fallback;
   const dist = (a: RGB, b: RGB) => Math.abs(a[0] - b[0]) + Math.abs(a[1] - b[1]) + Math.abs(a[2] - b[2]);
-  const accent = sorted.find((c) => dist(c, main) > 120) ?? [240, 240, 240];
-  return [main, accent];
+  return [main, sorted.find((c) => dist(c, main) > 120) ?? [240, 240, 240]];
 }
 
-function parseHex(h: string): RGB {
-  const v = parseInt(h.slice(1), 16);
-  return [(v >> 16) & 255, (v >> 8) & 255, v & 255];
+/**
+ * Déco du dessin d'origine au-dessus du point (u, v) : seulement les pixels de la couleur
+ * d'accent (bandes, flammes, damiers), pour une livrée nette en deux tons.
+ */
+function decal(art: Art | null, u: number, v: number, half: number, accent: RGB): RGB | null {
+  if (!art) return null;
+  const x = Math.round(art.x0 + ((u + half) / (2 * half)) * (art.x1 - art.x0));
+  const y = Math.round(art.y0 + ((v + CAR_WIDTH / 2) / CAR_WIDTH) * (art.y1 - art.y0));
+  const p = art.px;
+  const isAccent = (X: number, Y: number) => {
+    if (X < 0 || Y < 0 || X >= CAR_CELL_W || Y >= CAR_CELL_H) return false;
+    const o = (Y * CAR_CELL_W + X) * 4;
+    return p[o + 3] >= 200 && Math.abs(p[o] - accent[0]) + Math.abs(p[o + 1] - accent[1]) + Math.abs(p[o + 2] - accent[2]) < 80;
+  };
+  if (!isAccent(x, y)) return null;
+  // Zone d'accent assez grande (pas un reflet isolé).
+  let n = 0;
+  for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (isAccent(x + dx, y + dy)) n++;
+  return n >= 6 ? accent : null;
 }
 
-// ---------- Modèle ----------
+// ---------- Modèles ----------
+type ModelKind = 'muscle' | 'sport' | 'hatch' | 'sedan' | 'suv' | 'monster' | 'drift';
+
 interface Shape {
+  kind: ModelKind;
   len: number;
-  /** Haut de la caisse, avant (capot) et arrière. */
+  /** Bas de caisse (garde au sol), hauteur de caisse au-dessus. */
+  clearance: number;
   body: number;
-  /** Habitacle : arrière, avant (à la base), hauteur du toit, pentes du pare-brise et de la lunette. */
+  /** Habitacle : arrière et avant à la base, hauteur du toit, pentes du pare-brise et de la lunette. */
   cabRear: number;
   cabFront: number;
   roof: number;
   slopeF: number;
   slopeR: number;
   wheelR: number;
-  clearance: number;
-  spoiler: boolean;
+  /** Arrondi des coins de caisse. */
+  round: number;
+  wing: 'none' | 'lip' | 'ducktail' | 'gt';
 }
 
+/** Modèle de chaque voiture (selon sa famille et son dessin d'origine). */
+const MODEL: ModelKind[] = [
+  'sport', 'suv', 'hatch', 'muscle',
+  'hatch', 'sedan', 'sport', 'hatch',
+  'muscle', 'hatch', 'sport', 'sedan',
+  'monster', 'suv', 'sport', 'suv',
+  'drift', 'drift', 'drift', 'drift',
+];
+
 function shapeFor(carId: number): Shape {
-  if (carId === 12) {
-    // Titan : le monster truck de la planche.
-    return { len: 46, body: 13, cabRear: -12, cabFront: 6, roof: 19, slopeF: 0.8, slopeR: 0.3, wheelR: 7, clearance: 7, spoiler: false };
-  }
-  switch (carClass(carId).id) {
-    case 'vitesse':
-      return { len: 50, body: 7, cabRear: -9, cabFront: 5, roof: 12, slopeF: 1.6, slopeR: 1.4, wheelR: 4.5, clearance: 2, spoiler: true };
-    case 'agile':
-      return { len: 44, body: 8, cabRear: -12, cabFront: 7, roof: 14, slopeF: 1.2, slopeR: 0.7, wheelR: 4.5, clearance: 2, spoiler: false };
-    case 'lourde':
-      return { len: 50, body: 10, cabRear: -21, cabFront: 9, roof: 17, slopeF: 1.0, slopeR: 0.15, wheelR: 5.5, clearance: 3, spoiler: false };
-    default:
-      return { len: 50, body: 8, cabRear: -12, cabFront: 7, roof: 14, slopeF: 1.3, slopeR: 0.9, wheelR: 4.5, clearance: 2, spoiler: carId % 2 === 0 };
+  const kind = MODEL[carId] ?? 'sedan';
+  switch (kind) {
+    case 'muscle': // grosse américaine : long capot, prise d'air, lunette fuyante
+      return { kind, len: 50, clearance: 2, body: 8, cabRear: -15, cabFront: 2, roof: 13, slopeF: 1.5, slopeR: 1.6, wheelR: 4.5, round: 1.2, wing: 'lip' };
+    case 'sport': // sportive à moteur arrière : basse, arrondie, becquet
+      return { kind, len: 48, clearance: 2, body: 7, cabRear: -12, cabFront: 4, roof: 12, slopeF: 1.8, slopeR: 2.2, wheelR: 4.5, round: 2.2, wing: 'ducktail' };
+    case 'hatch': // compacte sportive : courte, hayon droit
+      return { kind, len: 42, clearance: 2, body: 8, cabRear: -18, cabFront: 5, roof: 14, slopeF: 1.3, slopeR: 0.25, wheelR: 4.5, round: 1.6, wing: 'none' };
+    case 'sedan': // berline sportive allemande : trois volumes
+      return { kind, len: 50, clearance: 2, body: 8, cabRear: -13, cabFront: 6, roof: 14, slopeF: 1.3, slopeR: 1.0, wheelR: 4.5, round: 1.2, wing: 'lip' };
+    case 'suv': // gros 4×4 carré
+      return { kind, len: 48, clearance: 4, body: 9, cabRear: -21, cabFront: 7, roof: 17, slopeF: 0.6, slopeR: 0.1, wheelR: 5.5, round: 1, wing: 'none' };
+    case 'monster':
+      return { kind, len: 44, clearance: 8, body: 7, cabRear: -12, cabFront: 5, roof: 19, slopeF: 0.8, slopeR: 0.3, wheelR: 7.5, round: 1, wing: 'none' };
+    case 'drift': // japonaise de drift : basse, ailes larges, grand aileron
+      return { kind, len: 50, clearance: 2, body: 7, cabRear: -12, cabFront: 5, roof: 12.5, slopeF: 1.5, slopeR: 1.2, wheelR: 4.5, round: 1.4, wing: 'gt' };
   }
 }
+
+const GLASS: RGB = [74, 168, 216];
+const GLARE: RGB = [226, 244, 255];
+const DARK: RGB = [24, 24, 30];
+const CHROME: RGB = [200, 204, 214];
+const TYRE: RGB = [22, 22, 26];
+const RIM: RGB = [190, 194, 206];
+const HEAD: RGB = [255, 240, 170];
+const TAIL: RGB = [230, 48, 54];
 
 function buildModel(carId: number): Voxel[] {
   const s = shapeFor(carId);
-  const [main, accent] = palette(carId);
-  const lum = (c: RGB) => c[0] * 0.3 + c[1] * 0.59 + c[2] * 0.11;
-  const stripes = carId % 3 === 0 && Math.abs(lum(accent) - lum(main)) > 60;
+  const art = spriteArt(carId);
+  const [main, accent] = palette(carId, art);
+  const def = CARS[carId];
+  const contrast = Math.abs(main[0] - accent[0]) + Math.abs(main[1] - accent[1]) + Math.abs(main[2] - accent[2]) > 200;
   const half = s.len / 2;
   const hw = CAR_WIDTH / 2 - 2;
-  const dark: RGB = [26, 26, 32];
-  const glass: RGB = [34, 46, 82];
-  const glassHi: RGB = [96, 132, 196];
-  const tyre: RGB = [20, 20, 24];
-  const rim: RGB = [184, 188, 200];
   const wheelU = [half - 9, -half + 9];
+  const base = s.clearance + s.body;
+  const flare = s.kind === 'drift' ? 1 : 0;
+  // Vitres foncées sur les voitures bleues (sinon elles se confondent avec la caisse).
+  const glass: RGB = main[2] > main[0] + 30 && main[2] > main[1] ? [36, 44, 78] : GLASS;
+  // Voitures de drift : une sur deux bicolore (bas de caisse de la couleur d'accent).
+  const twoTone = !!def?.drift && carId % 2 === 1;
 
-  const bodyTop = (u: number) => s.clearance + s.body - (u > half - 9 ? (u - (half - 9)) * 0.45 : 0) - (u < -half + 3 ? 1 : 0);
-  const bodyHalf = (u: number) => hw - Math.max(0, Math.abs(u) - (half - 4)) * 1.6;
+  const bodyTop = (u: number) => base - (u > half - 10 ? (u - (half - 10)) * 0.4 : 0) - (u < -half + 3 ? 1 : 0);
+  const bodyHalf = (u: number) => {
+    let w = hw - Math.max(0, Math.abs(u) - (half - 4)) * s.round;
+    // Ailes élargies au droit des roues.
+    if (flare && wheelU.some((wu) => Math.abs(u - wu) < s.wheelR + 2)) w += flare;
+    return w;
+  };
 
-  const at = (u: number, v: number, z: number): RGB | null => {
-    // Roues (dépassent légèrement de la caisse).
+  const at = (u: number, v: number, z: number): [RGB, Kind] | null => {
+    const av = Math.abs(v);
+    // Roues.
     for (const wu of wheelU) {
       const d2 = (u - wu) ** 2 + (z - s.wheelR) ** 2;
-      if (d2 <= s.wheelR * s.wheelR && Math.abs(v) >= hw - 3 && Math.abs(v) <= hw + 1) {
-        return Math.abs(v) === hw + 1 && d2 <= (s.wheelR * 0.5) ** 2 ? rim : tyre;
+      if (d2 <= s.wheelR * s.wheelR && av >= hw - 3 + flare && av <= hw + 1 + flare) {
+        return [av >= hw + 1 + flare && d2 <= (s.wheelR * 0.55) ** 2 ? RIM : TYRE, 'other'];
       }
     }
-    if (Math.abs(u) > half) return null;
     const top = bodyTop(u);
+    // Grand aileron sur montants (drift) et becquet de coffre.
+    if (s.wing === 'gt') {
+      const zw = base + 5;
+      if (u >= -half && u <= -half + 4 && av <= hw + 1 && z >= zw && z <= zw + 1) return [z === zw + 1 ? accent : DARK, 'other'];
+      if (u >= -half + 1 && u <= -half + 3 && Math.abs(av - 7) <= 0.5 && z > top && z < zw) return [DARK, 'other'];
+    }
+    if (s.wing === 'ducktail' && u >= -half + 1 && u <= -half + 5 && av <= hw - 2 && z === Math.floor(top) + 1) return [main, 'body'];
+    if (Math.abs(u) > half + 0.5) return null;
     const bh = bodyHalf(u);
     // Caisse.
-    if (z >= s.clearance && z <= top && Math.abs(v) <= bh) {
-      const front = u >= half - 1, rear = u <= -half;
-      if ((front || rear) && Math.abs(v) >= 6 && Math.abs(v) <= 10 && z >= top - 3 && z <= top - 2) return front ? [255, 243, 176] : [232, 51, 58];
-      if (front && Math.abs(v) <= 5 && z <= s.clearance + 2) return dark;
-      if (z === s.clearance) return dark;
+    if (z >= s.clearance && z <= top && av <= bh) {
+      const front = u >= half - 1, rear = u <= -half + 0.5;
+      // Pare-chocs chromés (américaine, berline) ou noirs.
+      if ((front || rear) && z <= s.clearance + 1) return [s.kind === 'muscle' || s.kind === 'sedan' ? CHROME : DARK, 'other'];
+      if (front && av <= 6 && z <= s.clearance + 3) return [DARK, 'other']; // calandre
+      if (front && av >= 6 && av <= hw - 1 && z >= top - 3 && z <= top - 2) return [HEAD, 'other'];
+      if (rear && av >= 5 && av <= hw - 1 && z >= top - 3 && z <= top - 2) return [TAIL, 'other'];
       // Passages de roue.
-      for (const wu of wheelU) if ((u - wu) ** 2 + (z - s.wheelR) ** 2 <= (s.wheelR + 1) ** 2 && Math.abs(v) >= hw - 4) return null;
-      return main;
+      for (const wu of wheelU) if ((u - wu) ** 2 + (z - s.wheelR) ** 2 <= (s.wheelR + 1) ** 2 && av >= hw - 4 + flare) return null;
+      if (z === s.clearance) return [DARK, 'other'];
+      if (twoTone && z <= s.clearance + 3) return [accent, 'other'];
+      return [main, 'body'];
     }
+    // Prise d'air sur le capot des américaines.
+    if (s.kind === 'muscle' && u > 4 && u < 12 && av <= 3 && z === Math.floor(top) + 1) return [DARK, 'other'];
+    // Roue de secours à l'arrière du 4×4.
+    if (s.kind === 'suv' && u < -half && u > -half - 2 && av <= 4 && z >= base - 6 && z <= base - 1) return [TYRE, 'other'];
     // Habitacle.
-    const base = s.clearance + s.body;
-    if (z > top && z <= s.clearance + s.roof) {
+    const roofZ = s.clearance + s.roof;
+    if (z > top && z <= roofZ + (s.kind === 'suv' ? 1 : 0)) {
       const h = z - base;
       const uf = s.cabFront - h * s.slopeF, ur = s.cabRear + h * s.slopeR;
       const cw = hw - 2 - h * 0.35;
-      if (u > uf || u < ur || Math.abs(v) > cw) return null;
-      const roofZ = s.clearance + s.roof;
-      if (z >= roofZ) return stripes && Math.abs(v) <= 3 && Math.abs(v) >= 1 ? accent : main;
+      if (u > uf || u < ur || av > cw) return null;
+      // Barres de toit du 4×4.
+      if (z > roofZ) return Math.abs(av - cw + 1) < 1 ? [DARK, 'other'] : null;
+      if (z >= roofZ) return [main, 'body'];
       const mid = (s.cabFront + s.cabRear) / 2 - 1;
-      if (Math.abs(u - mid) < 1.2 && Math.abs(v) > cw - 1.5) return main; // montant central
-      return z >= roofZ - 1 ? glassHi : glass;
-    }
-    // Aileron.
-    if (s.spoiler) {
-      const zs = s.clearance + s.body + 3;
-      if (u >= -half + 1 && u <= -half + 4 && Math.abs(v) <= hw && z >= zs && z <= zs + 1) return accent;
-      if (Math.abs(u - (-half + 2.5)) <= 1 && Math.abs(Math.abs(v) - 8) <= 0.5 && z > top && z < zs) return dark;
+      if (Math.abs(u - mid) < 1.2 && av > cw - 1.5) return [main, 'other']; // montant central
+      // Vitres bleu ciel avec reflets en biais.
+      return [z >= roofZ - 1 || Math.round(u + z * 1.4) % 7 === 0 ? GLARE : glass, 'other'];
     }
     return null;
   };
 
-  // Grille de voxels puis on ne garde que la surface.
-  const U0 = -26, V0 = -16, Z0 = 0, NU = 53, NV = 33, NZ = 22;
-  const grid: (RGB | null)[] = new Array(NU * NV * NZ);
+  const U0 = -27, V0 = -17, NU = 55, NV = 35, NZ = 24;
+  const grid: ([RGB, Kind] | null)[] = new Array(NU * NV * NZ);
   const idx = (i: number, j: number, k: number) => (k * NV + j) * NU + i;
-  for (let k = 0; k < NZ; k++)
-    for (let j = 0; j < NV; j++) for (let i = 0; i < NU; i++) grid[idx(i, j, k)] = at(i + U0, j + V0, k + Z0);
+  for (let k = 0; k < NZ; k++) for (let j = 0; j < NV; j++) for (let i = 0; i < NU; i++) grid[idx(i, j, k)] = at(i + U0, j + V0, k);
   const filled = (i: number, j: number, k: number) => i >= 0 && j >= 0 && k >= 0 && i < NU && j < NV && k < NZ && !!grid[idx(i, j, k)];
   const out: Voxel[] = [];
   for (let k = 0; k < NZ; k++) {
     for (let j = 0; j < NV; j++) {
       for (let i = 0; i < NU; i++) {
-        const c = grid[idx(i, j, k)];
-        if (!c) continue;
-        const n: [number, number, number] = [0, 0, 0];
-        if (!filled(i + 1, j, k)) n[0]++;
-        if (!filled(i - 1, j, k)) n[0]--;
-        if (!filled(i, j + 1, k)) n[1]++;
-        if (!filled(i, j - 1, k)) n[1]--;
-        if (!filled(i, j, k + 1)) n[2]++;
-        if (!filled(i, j, k - 1)) n[2]--;
-        if (n[0] === 0 && n[1] === 0 && n[2] === 0 && filled(i + 1, j, k) && filled(i, j + 1, k) && filled(i, j, k + 1)) continue;
-        out.push({ u: i + U0 + 0.5, v: j + V0 + 0.5, z: k + Z0, c, n });
+        const cell = grid[idx(i, j, k)];
+        if (!cell) continue;
+        const n: [number, number, number] = [
+          (filled(i + 1, j, k) ? 0 : 1) - (filled(i - 1, j, k) ? 0 : 1),
+          (filled(i, j + 1, k) ? 0 : 1) - (filled(i, j - 1, k) ? 0 : 1),
+          (filled(i, j, k + 1) ? 0 : 1) - (filled(i, j, k - 1) ? 0 : 1),
+        ];
+        const exposed =
+          !filled(i + 1, j, k) || !filled(i - 1, j, k) || !filled(i, j + 1, k) || !filled(i, j - 1, k) || !filled(i, j, k + 1) || !filled(i, j, k - 1);
+        if (!exposed) continue;
+        let c = cell[0];
+        // Déco d'origine plaquée sur les surfaces du dessus (capot, toit, coffre).
+        if (cell[1] === 'body' && !filled(i, j, k + 1) && contrast) c = decal(art, i + U0, j + V0, half, accent) ?? c;
+        out.push({ u: i + U0 + 0.5, v: j + V0 + 0.5, z: k, c, n });
       }
     }
   }
@@ -205,13 +296,13 @@ function renderAngle(model: Voxel[], a: number): HTMLCanvasElement {
   const zb = new Float32Array(SW * SH).fill(-1e9);
   const ca = Math.cos(a), sa = Math.sin(a);
   for (const vx of model) {
-    const x = vx.u * ca - vx.v * sa, y = vx.u * sa + vx.v * ca;
+    const x = (vx.u * ca - vx.v * sa) * SCALE, y = (vx.u * sa + vx.v * ca) * SCALE, z = vx.z * SCALE;
     const nx = vx.n[0] * ca - vx.n[1] * sa, ny = vx.n[0] * sa + vx.n[1] * ca, nz = vx.n[2];
     const nl = Math.hypot(nx, ny, nz) || 1;
     const lit = Math.max(0, (nx * L[0] + ny * L[1] + nz * L[2]) / nl);
     const k = 0.5 + 0.62 * lit;
-    const sx = (x - y) * ISO + AX, sy = (x + y) * (ISO / 2) - vx.z * ISO_Z + AY;
-    const depth = x + y + vx.z * 1.6;
+    const sx = (x - y) * ISO + AX, sy = (x + y) * (ISO / 2) - z * ISO_Z + AY;
+    const depth = x + y + z * 1.6;
     const px = Math.round(sx) - 1, py = Math.round(sy) - 1;
     for (let dy = 0; dy < 3; dy++) {
       for (let dx = 0; dx < 3; dx++) {
@@ -230,16 +321,16 @@ function renderAngle(model: Voxel[], a: number): HTMLCanvasElement {
   // Contour sombre d'un pixel, pour que la voiture se détache du décor.
   const d = img.data;
   const out = new Uint8ClampedArray(d);
+  const solid = (X: number, Y: number) => X >= 0 && Y >= 0 && X < SW && Y < SH && d[(Y * SW + X) * 4 + 3] > 0;
   for (let y = 0; y < SH; y++) {
     for (let x = 0; x < SW; x++) {
       const o = (y * SW + x) * 4;
       if (d[o + 3]) continue;
-      const n = (X: number, Y: number) => X >= 0 && Y >= 0 && X < SW && Y < SH && d[(Y * SW + X) * 4 + 3] > 0;
-      if (n(x - 1, y) || n(x + 1, y) || n(x, y - 1) || n(x, y + 1)) {
+      if (solid(x - 1, y) || solid(x + 1, y) || solid(x, y - 1) || solid(x, y + 1)) {
         out[o] = 14;
         out[o + 1] = 12;
         out[o + 2] = 22;
-        out[o + 3] = 230;
+        out[o + 3] = 235;
       }
     }
   }
@@ -278,33 +369,34 @@ export function drawIsoCar(ctx: CanvasRenderingContext2D, carId: number, a: numb
   const s = spriteFor(carId, a);
   if (!s) {
     ctx.fillStyle = CARS[carId]?.color ?? '#f0f';
-    ctx.fillRect(sx - 14, sy - 16, 28, 16);
+    ctx.fillRect(sx - 12, sy - 14, 24, 14);
     return;
   }
-  // Le roulis décale légèrement la voiture vers l'extérieur du virage.
-  const ox = Math.round(-Math.sin(a) * lean * 1.5 * ISO), oy = 0;
-  ctx.drawImage(s, Math.round(sx - AX * scale) + ox, Math.round(sy - AY * scale) + oy, SW * scale, SH * scale);
+  const ox = Math.round(-Math.sin(a) * lean * 1.5 * ISO);
+  ctx.drawImage(s, Math.round(sx - AX * scale) + ox, Math.round(sy - AY * scale), SW * scale, SH * scale);
 }
 
 // ---------- Vignettes des menus ----------
 export const THUMB_W = 72;
 export const THUMB_H = 52;
+/** Nombre de lignes de la planche des vignettes. */
+export const THUMB_ROWS = Math.ceil(CARS.length / 4);
 let thumbUrl = '';
 
-/** Planche des 16 voitures en isométrique (4 par ligne), pour les vignettes des menus. */
+/** Planche des voitures en isométrique (4 par ligne), pour les vignettes des menus. */
 export function thumbAtlasUrl(): string {
   if (thumbUrl) return thumbUrl;
   if (!atlas.complete || !atlas.naturalWidth) return atlasUrl;
   const c = document.createElement('canvas');
   c.width = THUMB_W * 4;
-  c.height = THUMB_H * 4;
+  c.height = THUMB_H * THUMB_ROWS;
   const g = c.getContext('2d')!;
   g.imageSmoothingEnabled = false;
   for (let id = 0; id < CARS.length; id++) {
-    const x = (id % 4) * THUMB_W + THUMB_W / 2, y = Math.floor(id / 4) * THUMB_H + THUMB_H / 2 + 12;
+    const x = (id % 4) * THUMB_W + THUMB_W / 2, y = Math.floor(id / 4) * THUMB_H + THUMB_H / 2 + 10;
     g.fillStyle = 'rgba(0,0,0,0.3)';
     g.beginPath();
-    g.ellipse(x, y, 26, 11, 0, 0, Math.PI * 2);
+    g.ellipse(x, y, 25, 10, 0, 0, Math.PI * 2);
     g.fill();
     drawIsoCar(g, id, -0.45, x, y);
   }
@@ -316,4 +408,3 @@ export const isoReady = new Promise<void>((res) => {
   if (atlas.complete && atlas.naturalWidth) res();
   else atlas.addEventListener('load', () => res(), { once: true });
 });
-

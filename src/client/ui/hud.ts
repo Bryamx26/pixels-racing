@@ -3,6 +3,7 @@ import { CAR } from '../../shared/cars/physics';
 import { ITEM_NAMES, formatTime, inPit, raceTicks, standings, type RaceEvent, type RaceState } from '../../shared/race/race';
 import type { Track } from '../../shared/track/track';
 import { Minimap } from '../render/minimap';
+import type { DriftScore } from '../../shared/race/driftScore';
 
 /** Interface pendant la course : place, tour, chrono, vitesse, minicarte, feux de départ. */
 export class Hud {
@@ -31,11 +32,28 @@ export class Hud {
       <button class="hud-menu secondary" aria-label="Menu">II</button>
       <div class="hud-center"></div>
       <div class="hud-speed"></div>
-      <div class="hud-net"></div>`;
+      <div class="hud-net"></div>
+      <div class="hud-drift" hidden><div class="dt"></div><div class="dc"></div><div class="da"><i></i></div></div>`;
     const q = (s: string) => root.querySelector<HTMLElement>(s)!;
     this.els = { pos: q('.hud-pos'), lap: q('.hud-lap'), time: q('.hud-time'), speed: q('.hud-speed'), center: q('.hud-center'), net: q('.hud-net'), boost: q('.bar.boost'), damage: q('.bar.damage'), item: q('.hud-item'), extra: q('.hud-extra') };
     this.minimap = new Minimap(q('#minimap') as HTMLCanvasElement);
     q('.hud-menu').addEventListener('click', () => this.onMenu());
+  }
+
+  /** Panneau du mode drift (score, combo en cours, angle de glisse) ; null le masque. */
+  drift(score: DriftScore | null, best: number): void {
+    const el = this.root.querySelector<HTMLElement>('.hud-drift')!;
+    el.hidden = !score;
+    if (!score) return;
+    const fmt = (n: number) => Math.round(n).toLocaleString('fr-FR');
+    el.querySelector('.dt')!.textContent = `DRIFT ${fmt(score.total)}` + (best ? `  ·  RECORD ${fmt(best)}` : '');
+    const dc = el.querySelector<HTMLElement>('.dc')!;
+    dc.textContent = score.combo > 0 ? `+${fmt(score.combo)}  ×${score.mult}` : '';
+    dc.className = 'dc' + (score.drifting ? ' on' : '');
+    const deg = Math.min(90, (score.angle * 180) / Math.PI);
+    const bar = el.querySelector<HTMLElement>('.da i')!;
+    bar.style.width = `${(deg / 90) * 100}%`;
+    bar.className = score.drifting ? 'on' : '';
   }
 
   show(on: boolean): void {

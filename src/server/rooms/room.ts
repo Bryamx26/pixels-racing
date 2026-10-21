@@ -1,7 +1,7 @@
 import { MAX_PLAYERS, SNAPSHOT_EVERY } from '../../shared/constants';
 import { NO_INPUT, unpackInput, type CarInput } from '../../shared/input';
 import { round2 } from '../../shared/math';
-import { CARS } from '../../shared/cars/carAtlas';
+import { CARS } from '../../shared/cars/roster';
 import { Race, type Entrant, type RaceEvent, type RaceState } from '../../shared/race/race';
 import type { LobbyPlayer, RoomInfo, ServerMsg } from '../../shared/net/protocol';
 import type { TrackDef } from '../../shared/track/tracks';

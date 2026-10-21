@@ -7,6 +7,8 @@ import { EDITOR_TEMPLATE, TRACKS, customTrackDef } from '../src/shared/track/tra
 import { getTrack, nearestSample } from '../src/shared/track/track';
 import { CARS } from '../src/shared/cars/carAtlas';
 import { validateTrack } from '../src/shared/track/validate';
+import { carStats } from '../src/shared/cars/stats';
+import { DriftScore } from '../src/shared/race/driftScore';
 
 let failed = 0;
 function test(name: string, fn: () => void) {
@@ -185,6 +187,41 @@ test('le nitro se déclenche à l\'appui du bouton objet', () => {
 test("le modèle de l'éditeur est un circuit valide", () => {
   const problems = validateTrack(customTrackDef('Test', EDITOR_TEMPLATE));
   assert(problems.length === 0, problems.map((p) => p.message).join(', '));
+});
+
+test('une voiture de drift tient la glisse à l\'accélérateur, pas une voiture normale', () => {
+  const t = getTrack('lac');
+  const glide = (carId: number) => {
+    const b = gridPose(t, 0);
+    let d = 0;
+    for (let i = 0; i < 400; i++) {
+      const inp = i < 150 ? { throttle: 1, brake: 0, steer: 0 } : i < 160 ? { throttle: 0, brake: 1, steer: 1 } : { throttle: 1, brake: 0, steer: 0.8 };
+      const r = stepCar(b, inp, t, 1 / 60, { stats: carStats(carId) });
+      if (r.drift && i >= 160) d++;
+      if (r.wall) break;
+    }
+    return d;
+  };
+  const driftCar = glide(16), normal = glide(3);
+  assert(driftCar > 120 && normal < 20, `drift ${driftCar} ticks, normale ${normal} ticks`);
+});
+
+test('mode drift : la glisse rapporte des points, un mur fait perdre le combo', () => {
+  const t = getTrack('lac');
+  const b = gridPose(t, 0);
+  b.vx = 300 * Math.cos(b.a + 0.5);
+  b.vy = 300 * Math.sin(b.a + 0.5);
+  const sc = new DriftScore();
+  for (let i = 0; i < 120; i++) sc.step(b, 0, 1 / 60);
+  assert(sc.combo > 1000 && sc.mult >= 2, `combo ${Math.round(sc.combo)} ×${sc.mult}`);
+  const lost = sc.step(b, 200, 1 / 60);
+  assert(lost?.type === 'lost' && sc.combo === 0 && sc.total === 0, 'combo non perdu');
+  for (let i = 0; i < 60; i++) sc.step(b, 0, 1 / 60);
+  b.vx = 300 * Math.cos(b.a);
+  b.vy = 300 * Math.sin(b.a);
+  let banked = null;
+  for (let i = 0; i < 60 && !banked; i++) banked = sc.step(b, 0, 1 / 60);
+  assert(banked?.type === 'banked' && sc.total > 0, 'combo non encaissé');
 });
 
 if (failed) {

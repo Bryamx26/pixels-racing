@@ -83,6 +83,7 @@ export type RaceEvent =
   | { type: 'item'; id: string; item: ItemKind }
   | { type: 'spin'; id: string; x: number; y: number }
   | { type: 'boost'; id: string }
+  | { type: 'wall'; id: string; power: number }
   | { type: 'done' };
 
 export interface Entrant {
@@ -233,6 +234,7 @@ export class Race {
       r.offroad = res.offroad;
       r.drift = res.drift;
       if (res.boostStarted) events.push({ type: 'boost', id: r.id });
+      if (res.wallPower > 60) events.push({ type: 'wall', id: r.id, power: res.wallPower });
       if (r.shield > 0) r.shield--;
 
       // Objet : utilisé à l'appui du bouton.

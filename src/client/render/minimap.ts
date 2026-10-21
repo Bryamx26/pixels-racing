@@ -1,4 +1,4 @@
-import { CARS } from '../../shared/cars/carAtlas';
+import { CARS } from '../../shared/cars/roster';
 import type { RaceState } from '../../shared/race/race';
 import type { Track } from '../../shared/track/track';
 import { isoX, isoY } from './iso';

@@ -268,7 +268,7 @@ button:disabled { opacity: 0.4; cursor: not-allowed; }
   width: calc(72px * var(--s));
   height: calc(52px * var(--s));
   background-image: var(--atlas);
-  background-size: calc(288px * var(--s)) calc(208px * var(--s));
+  background-size: calc(288px * var(--s)) calc(260px * var(--s));
   background-position: calc(var(--cx) * -72px * var(--s)) calc(var(--cy) * -52px * var(--s));
   image-rendering: pixelated;
   flex: none;
@@ -356,3 +356,17 @@ button:disabled { opacity: 0.4; cursor: not-allowed; }
 #editor .ed-status.bad { color: var(--danger); }
 #editor .ed-canvas { flex: 1; min-height: 0; width: 100%; touch-action: none; border: 2px solid var(--line); }
 #editor .ed-help { font-size: 9px; line-height: 1.6; color: var(--muted); }
+
+/* ---------- Mode drift ---------- */
+.hud-drift {
+  position: absolute; top: calc(10px + var(--safe-t)); left: 50%; transform: translateX(-50%);
+  text-align: center; font-family: var(--pixel); text-shadow: 2px 2px 0 #000; pointer-events: none;
+}
+.hud-drift .dt { font-size: clamp(11px, 2.6vmin, 18px); color: var(--accent); }
+.hud-drift .dc { font-size: clamp(14px, 4vmin, 28px); color: #b5f3ff; min-height: 1.2em; margin-top: 4px; }
+.hud-drift .dc.on { color: #ff5cd6; }
+.hud-drift .da { width: clamp(90px, 22vmin, 180px); height: 6px; margin: 4px auto 0; background: rgba(0,0,0,0.5); border: 1px solid #000; }
+.hud-drift .da i { display: block; height: 100%; width: 0; background: #7b7b8f; }
+.hud-drift .da i.on { background: #ff5cd6; }
+.results-drift { font-family: var(--pixel); text-align: center; line-height: 2; }
+.results-drift .big { font-size: clamp(22px, 6vmin, 40px); color: var(--accent); }

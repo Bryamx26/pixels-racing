@@ -1,4 +1,4 @@
-import { CARS } from '../../shared/cars/carAtlas';
+import { CARS } from '../../shared/cars/roster';
 import { MAX_LAPS, MAX_PLAYERS, MIN_LAPS } from '../../shared/constants';
 import { COUNTDOWN_TICKS } from '../../shared/constants';
 import { carClass } from '../../shared/cars/stats';
@@ -84,6 +84,7 @@ export function homeScreen(name: string, joinCode: string, autoGas: boolean, mut
     <div class="row">
       <button data-a="solo">COURSE SOLO</button>
       <button data-a="trial">CONTRE-LA-MONTRE</button>
+      <button data-a="drift">MODE DRIFT</button>
       <button data-a="create">CRÉER UNE SALLE</button>
     </div>
     <div class="row">
@@ -102,6 +103,8 @@ export function homeScreen(name: string, joinCode: string, autoGas: boolean, mut
   </div>`;
 }
 
+export type SoloMode = 'race' | 'trial' | 'drift';
+
 export function soloScreen(
   carId: number,
   trackId: string,
@@ -109,12 +112,20 @@ export function soloScreen(
   bots: number,
   items: boolean,
   custom: TrackDef | null,
-  trial: boolean,
+  mode: SoloMode,
   best: string,
 ): string {
+  const trial = mode !== 'race';
+  const title = mode === 'trial' ? 'CONTRE-LA-MONTRE' : mode === 'drift' ? 'MODE DRIFT' : 'COURSE SOLO';
+  const hint =
+    mode === 'trial'
+      ? `Seul en piste contre ton fantôme (ton meilleur tour). Record perso : ${best}`
+      : mode === 'drift'
+        ? `Enchaîne les glisses pour marquer des points : un coup de frein pour faire décrocher l'arrière, puis gaz et contre-braquage pour tenir la glisse. Plus tu restes en travers, plus le multiplicateur monte (×5) ; un mur fait perdre le combo. Les voitures DRIFT (Kaido, Touge, Ronin, Sakura) sont faites pour ça. Record perso : ${best}`
+        : '';
   return `<div class="screen wide">
-    <h2>${trial ? 'CONTRE-LA-MONTRE' : 'COURSE SOLO'}</h2>
-    ${trial ? `<p class="hint">Seul en piste contre ton fantôme (ton meilleur tour). Record perso : ${best}</p>` : ''}
+    <h2>${title}</h2>
+    ${hint ? `<p class="hint">${hint}</p>` : ''}
     <div class="row">
       <label class="field">Circuit<select data-a="track">${trackOptions(trackId, custom)}</select></label>
       <label class="field">Tours<select data-a="laps">${lapOptions(laps)}</select></label>
@@ -187,7 +198,26 @@ export function pauseScreen(online: boolean): string {
   </div>`;
 }
 
-export function resultsScreen(state: RaceState, myId: string, online: boolean): string {
+export interface DriftResult {
+  score: number;
+  best: number;
+  bestCombo: number;
+  record: boolean;
+}
+
+export function resultsScreen(state: RaceState, myId: string, online: boolean, drift?: DriftResult): string {
+  if (drift) {
+    const fmt = (n: number) => Math.round(n).toLocaleString('fr-FR');
+    return `<div class="screen overlay">
+    <h2>${drift.record ? 'NOUVEAU RECORD !' : 'MODE DRIFT'}</h2>
+    <div class="results-drift">
+      <div class="big">${fmt(drift.score)} pts</div>
+      <div>Meilleur combo : ${fmt(drift.bestCombo)}</div>
+      <div>Record perso : ${fmt(drift.best)}</div>
+    </div>
+    <div class="row"><button class="secondary" data-a="menu">MENU</button><button data-a="again">REJOUER</button></div>
+  </div>`;
+  }
   const rows = standings(state)
     .map((r, i) => {
       const time = r.finishTick >= 0 ? formatTime(r.finishTick - COUNTDOWN_TICKS) : 'NC';
