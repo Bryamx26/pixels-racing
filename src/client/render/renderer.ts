@@ -6,7 +6,7 @@ import { nearestSample, type Track } from '../../shared/track/track';
 import { drawText } from './pixelFont';
 import { ISO, ISO_Z, groundMatrix, isoX, isoY, zAt } from './iso';
 import { renderIsoTrack, type IsoArt } from './isoArt';
-import { CAR_HEIGHT, drawIsoCar } from './isoCar';
+import { CAR_HEIGHT, CAR_SCALE, drawIsoCar } from './isoCar';
 
 interface Particle {
   x: number;
@@ -306,6 +306,7 @@ export class Renderer {
     this.ground(z);
     ctx.translate(r.x + 3, r.y + 3);
     ctx.rotate(r.a);
+    ctx.scale(CAR_SCALE, CAR_SCALE);
     ctx.fillStyle = 'rgba(0,0,0,0.35)';
     ctx.fillRect(-CAR_LENGTH / 2 + 1, -CAR_WIDTH / 2, CAR_LENGTH - 2, CAR_WIDTH);
     ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -315,7 +316,7 @@ export class Renderer {
       ctx.strokeStyle = 'rgba(255, 225, 79, 0.9)';
       ctx.lineWidth = 2;
       ctx.beginPath();
-      ctx.ellipse(sx, sy - CAR_HEIGHT * ISO_Z * 0.5, CAR_LENGTH * ISO * 0.85, CAR_LENGTH * ISO * 0.6, 0, 0, Math.PI * 2);
+      ctx.ellipse(sx, sy - CAR_HEIGHT * ISO_Z * 0.5, CAR_LENGTH * CAR_SCALE * ISO * 0.85, CAR_LENGTH * CAR_SCALE * ISO * 0.6, 0, 0, Math.PI * 2);
       ctx.stroke();
     }
   }
