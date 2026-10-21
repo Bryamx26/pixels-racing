@@ -98,6 +98,8 @@ interface Spec {
   /** Ailes élargies au droit des roues. */
   flare: number;
   wing: 'none' | 'lip' | 'ducktail' | 'gt';
+  /** Section de caisse : plus grand = plus carrée. */
+  sq?: number;
 }
 
 /** Modèle de chaque voiture (selon sa famille et son dessin d'origine). */
@@ -124,8 +126,10 @@ const SPECS: Record<ModelKind, Spec> = {
   monster: { len: 42, hw: 11, clearance: 9, zNose: 15, zBelt: 17, zTail: 16.5, cabRear: -10, cabFront: 4, roof: 24, ws: 4, rw: 1, wheelR: 8, wheelInset: 8, corner: 3, flare: 0, wing: 'none' },
   // Japonaise de drift : basse, ailes larges, grand aileron.
   drift: { len: 50, hw: 12, clearance: 1.6, zNose: 7, zBelt: 9.4, zTail: 9.6, cabRear: -12.5, cabFront: 4, roof: 14, ws: 7, rw: 6.5, wheelR: 4.5, wheelInset: 9, corner: 4.5, flare: 1.2, wing: 'gt' },
-  // Coupé GT japonais : caisse carrée, ailes larges, capot ajouré, grand aileron.
-  gtr: { len: 50, hw: 12.3, clearance: 2, zNose: 8, zBelt: 10, zTail: 10.3, cabRear: -12, cabFront: 4, roof: 14.6, ws: 6.5, rw: 5, wheelR: 4.7, wheelInset: 9, corner: 3.5, flare: 1, wing: 'gt' },
+  // Coupé GT japonais, reproduit d'après la photo de bryam (proportions réelles : 4,60 × 1,79 ×
+  // 1,36 m, empattement 2,67 m) : caisse carrée, capot bombé ajouré, phares effilés, grande
+  // bouche basse, lame avant, quatre feux ronds, aileron carbone sur grands pieds, jantes noires.
+  gtr: { len: 52, hw: 10.4, clearance: 1.4, zNose: 8.4, zBelt: 9.6, zTail: 10.2, cabRear: -17, cabFront: 8, roof: 16, ws: 7.5, rw: 7, wheelR: 4.05, wheelInset: 10.8, corner: 2.6, flare: 0.7, wing: 'gt', sq: 7 },
 };
 
 const GLASS: RGB = [10, 14, 22];
@@ -186,7 +190,7 @@ function buildCar(carId: number, gl: THREE.WebGLRenderer): THREE.Group {
   if (!envMap) envMap = new THREE.PMREMGenerator(gl).fromScene(new RoomEnvironment(), 0.04).texture;
   const paint = new THREE.MeshPhysicalMaterial({
     vertexColors: true,
-    metalness: 0.15,
+    metalness: kind === 'gtr' ? 0.45 : 0.15,
     roughness: 0.42,
     clearcoat: 1,
     clearcoatRoughness: 0.05,
@@ -221,7 +225,7 @@ function buildCar(carId: number, gl: THREE.WebGLRenderer): THREE.Group {
   const bottomAt = (x: number) => {
     let z = s.clearance;
     for (const wx of wheelX) {
-      const r = s.wheelR + 0.7, dx = x - wx;
+      const r = s.wheelR + (kind === 'gtr' ? 0.35 : 0.7), dx = x - wx;
       if (Math.abs(dx) < r) z = Math.max(z, Math.min(s.wheelR + Math.sqrt(r * r - dx * dx), topAt(x) - 2.4));
     }
     return z;
@@ -236,17 +240,20 @@ function buildCar(carId: number, gl: THREE.WebGLRenderer): THREE.Group {
         const w = width(x), top = topAt(x);
         const bot = bottomAt(x);
         const mid = (bot + top) / 2, hh = (top - bot) / 2;
-        const zr = se(Math.sin(t), 5);
-        const z = mid + hh * zr;
+        const n = s.sq ?? 5;
+        const zr = se(Math.sin(t), n);
+        let z = mid + hh * zr;
         // Flancs légèrement rentrés vers le haut.
-        const y = w * se(Math.cos(t), 5) * (1 - 0.06 * Math.max(0, zr));
+        const y = w * se(Math.cos(t), n) * (1 - 0.06 * Math.max(0, zr));
+        // Capot bombé au centre (GT).
+        if (kind === 'gtr' && zr > 0.8 && x > s.cabFront && x < half - 3 && Math.abs(y) < 5) z += 0.6 * (1 - (y / 5) ** 2) * smooth((x - s.cabFront) / 3);
         let c: RGB = main;
-        if (z < bot + 0.6) c = DARK;
+        if (z < bot + (kind === 'gtr' ? 1 : 0.6)) c = DARK;
         else if (twoTone && z < s.clearance + 3.2) c = accent;
         // Bandes de course sur le capot et le coffre des américaines.
         else if (kind === 'muscle' && contrast && zr > 0.9 && Math.abs(y) > 0.8 && Math.abs(y) < 2.8) c = accent;
         // Prise d'air du capot (GT), plus sombre.
-        else if (kind === 'gtr' && zr > 0.9 && x > 8 && x < 17 && Math.abs(y) < 5) c = [main[0] * 0.7, main[1] * 0.7, main[2] * 0.7];
+        else if (kind === 'gtr' && zr > 0.9 && x > half - 12 && x < half - 6 && Math.abs(y) < 2.6) c = [main[0] * 0.3, main[1] * 0.3, main[2] * 0.35];
         return { p: [x, y, z], c };
       }),
       paint,
@@ -258,7 +265,8 @@ function buildCar(carId: number, gl: THREE.WebGLRenderer): THREE.Group {
     const up = Math.min(smooth((x - s.cabRear) / s.rw), smooth((s.cabFront - x) / s.ws));
     return s.zBelt + (s.roof - s.zBelt) * Math.sqrt(up);
   };
-  const xB = (s.cabRear + s.rw + s.cabFront - s.ws) / 2;
+  // Montant central (coupé : une grande vitre latérale, une petite custode à l'arrière).
+  const xB = kind === 'gtr' ? s.cabRear + s.rw + 2.2 : (s.cabRear + s.rw + s.cabFront - s.ws) / 2;
   const CI = 60, CJ = 48;
   car.add(
     new THREE.Mesh(
@@ -287,7 +295,7 @@ function buildCar(carId: number, gl: THREE.WebGLRenderer): THREE.Group {
 
   // ----- Roues -----
   const wheelY = kind === 'monster' ? s.hw + 2 : width(wheelX[0]) - 0.8;
-  const tyreW = kind === 'monster' ? 5 : 3;
+  const tyreW = kind === 'monster' ? 5 : kind === 'gtr' ? 3.2 : 3;
   const tyreGeo = new THREE.CylinderGeometry(s.wheelR, s.wheelR, tyreW, 28);
   const rimGeo = new THREE.CylinderGeometry(s.wheelR * 0.62, s.wheelR * 0.62, 0.3, 24);
   const hubGeo = new THREE.CylinderGeometry(s.wheelR * 0.18, s.wheelR * 0.18, 0.4, 12);
@@ -304,6 +312,16 @@ function buildCar(carId: number, gl: THREE.WebGLRenderer): THREE.Group {
       const hub = new THREE.Mesh(hubGeo, hubMat);
       hub.position.y = (side * tyreW) / 2 + side * 0.1;
       wheel.add(hub);
+      if (kind === 'gtr') {
+        // Jantes noires à six branches.
+        rim.material = matte(0x08080a, 0.6, 0.3);
+        for (let k = 0; k < 6; k++) {
+          const spoke = new THREE.Mesh(new THREE.BoxGeometry(s.wheelR * 1.15, 0.25, 0.42), matte(0x26272d, 0.3, 0.8));
+          spoke.rotation.y = (k / 6) * Math.PI;
+          spoke.position.y = (side * tyreW) / 2 + side * 0.12;
+          wheel.add(spoke);
+        }
+      }
       wheel.position.set(wx, side * wheelY, s.wheelR);
       car.add(wheel);
     }
@@ -327,11 +345,31 @@ function buildCar(carId: number, gl: THREE.WebGLRenderer): THREE.Group {
 
   // ----- Phares, calandre, feux -----
   const lightZ = s.zNose - 1.6;
-  for (const side of [-1, 1]) {
-    const y = side * s.hw * 0.66;
-    box(0.6, s.hw * 0.42, 1.1, glow(HEAD), endX(y, 1) - 0.15, y, lightZ);
+  if (kind === 'gtr') {
+    for (const side of [-1, 1]) {
+      // Phares effilés : boîtier sombre et deux optiques rondes.
+      const y = side * s.hw * 0.62;
+      box(1, s.hw * 0.5, 1.3, darkMat, endX(y, 1) - 0.35, y, s.zNose - 0.9, 0.25);
+      for (const k of [0.45, 0.78]) {
+        const yy = side * s.hw * k;
+        const lens = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.55, 0.4, 14), glow(HEAD));
+        lens.rotation.z = Math.PI / 2;
+        lens.position.set(endX(yy, 1) - 0.1, yy, s.zNose - 0.9);
+        car.add(lens);
+      }
+      // Ailettes (canards) aux coins du pare-chocs.
+      box(1.6, 0.25, 0.3, darkMat, endX(side * s.hw * 0.9, 1) - 0.4, side * (s.hw - 0.3), s.clearance + 2.6);
+    }
+    box(0.5, s.hw * 0.5, 0.8, darkMat, endX(0, 1) - 0.1, 0, s.zNose - 1); // calandre
+    box(0.6, s.hw * 1.2, 2.4, matte(0x1c1d22, 0.5, 0.5), endX(0, 1) - 0.1, 0, s.clearance + 2.4); // grande bouche (échangeur)
+    box(2.4, s.hw * 2.05, 0.3, darkMat, endX(0, 1) - 0.4, 0, s.clearance + 0.1); // lame avant
+  } else {
+    for (const side of [-1, 1]) {
+      const y = side * s.hw * 0.66;
+      box(0.6, s.hw * 0.42, 1.1, glow(HEAD), endX(y, 1) - 0.15, y, lightZ);
+    }
+    box(0.6, s.hw * 0.7, 1.8, darkMat, endX(0, 1) - 0.1, 0, s.clearance + 2.2);
   }
-  box(0.6, s.hw * 0.7, 1.8, darkMat, endX(0, 1) - 0.1, 0, s.clearance + 2.2);
   const tailZ = s.zTail - 1.7;
   for (const side of [-1, 1]) {
     if (kind === 'gtr') {
@@ -357,7 +395,14 @@ function buildCar(carId: number, gl: THREE.WebGLRenderer): THREE.Group {
 
   // ----- Aileron, becquet, prise d'air -----
   const wingMat = twoTone || kind === 'gtr' ? darkMat : new THREE.MeshPhysicalMaterial({ color: toLin(accent), roughness: 0.4, clearcoat: 1, envMap });
-  if (s.wing === 'gt') {
+  if (kind === 'gtr') {
+    // Grand aileron carbone, plus large que la caisse, sur deux grands pieds.
+    const zw = s.zTail + 5.2, xw = -half + 2.8;
+    box(4, s.hw * 2 + 2.4, 0.45, wingMat, xw, 0, zw, -0.1);
+    for (const side of [-1, 1]) box(4.2, 0.3, 2.4, darkMat, xw, side * (s.hw + 1.3), zw - 0.6);
+    for (const side of [-1, 1]) box(1.2, 0.45, zw - s.zTail + 0.2, darkMat, xw + 1.4, side * (s.hw * 0.62), (zw + s.zTail) / 2);
+    box(2.4, s.hw * 1.6, 0.4, darkMat, -half + 0.6, 0, s.clearance + 0.4); // diffuseur
+  } else if (s.wing === 'gt') {
     const zw = s.zTail + 4.5, xw = -half + 2.6;
     box(3.6, s.hw * 2 + 0.6, 0.55, wingMat, xw, 0, zw, -0.12);
     for (const side of [-1, 1]) box(3.4, 0.4, 2, darkMat, xw, side * (s.hw + 0.3), zw - 0.4);
