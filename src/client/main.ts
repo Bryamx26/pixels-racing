@@ -54,6 +54,8 @@ const prefs = {
   muted: store.get('mute', '0') === '1',
   vibrate: store.get('vibrate', '1') === '1',
   fx: store.get('fx', '1') === '1',
+  touchWheel: store.get('touchwheel', '1') === '1',
+  touchLock: Number(store.get('touchlock', '135')) || 135,
 };
 
 // ---------- Circuit perso (éditeur) ----------
@@ -79,6 +81,7 @@ const toastEl = document.getElementById('toast')!;
 const renderer = new Renderer(canvas);
 const controls = new Controls(touchEl);
 controls.autoGas = prefs.autoGas;
+controls.setTouchWheel(prefs.touchWheel, prefs.touchLock);
 try {
   controls.wheel = { ...DEFAULT_WHEEL, ...(JSON.parse(store.get('wheel', '{}')) as Partial<WheelConfig>) };
 } catch {
@@ -243,7 +246,7 @@ function showSolo(mode: ui.SoloMode): void {
 let settingsTimer = 0;
 function showSettings(): void {
   const w = controls.wheel;
-  ui.show(ui.settingsScreen({ wheel: w.enabled, rotation: w.rotation, device: w.device, vibrate: prefs.vibrate, fx: prefs.fx, autoGas: prefs.autoGas }), {
+  ui.show(ui.settingsScreen({ wheel: w.enabled, rotation: w.rotation, device: w.device, vibrate: prefs.vibrate, fx: prefs.fx, autoGas: prefs.autoGas, touchWheel: prefs.touchWheel, touchLock: prefs.touchLock }), {
     wheel: (el) => {
       w.enabled = (el as HTMLInputElement).checked;
       saveWheel();
@@ -268,6 +271,16 @@ function showSettings(): void {
     autogas: (el) => {
       prefs.autoGas = controls.autoGas = (el as HTMLInputElement).checked;
       store.set('autogas', prefs.autoGas ? '1' : '0');
+    },
+    touchwheel: (el) => {
+      prefs.touchWheel = (el as HTMLInputElement).checked;
+      store.set('touchwheel', prefs.touchWheel ? '1' : '0');
+      controls.setTouchWheel(prefs.touchWheel, prefs.touchLock);
+    },
+    touchlock: (el) => {
+      prefs.touchLock = Number((el as HTMLSelectElement).value);
+      store.set('touchlock', String(prefs.touchLock));
+      controls.setTouchWheel(prefs.touchWheel, prefs.touchLock);
     },
     calib: () => calibrate(),
     back: () => {

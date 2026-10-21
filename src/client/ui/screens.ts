@@ -129,6 +129,8 @@ export interface SettingsView {
   vibrate: boolean;
   fx: boolean;
   autoGas: boolean;
+  touchWheel: boolean;
+  touchLock: number;
 }
 
 /** Réglages : volant (rotation, calibrage), vibrations, effets de vitesse. */
@@ -146,6 +148,12 @@ export function settingsScreen(v: SettingsView): string {
     <div class="wheel-live" id="wheel-live">Branche ton volant et touche-le pour qu'il soit détecté.</div>
     <div class="row"><button class="secondary" data-a="calib">CALIBRER LE VOLANT</button></div>
     <div class="calib" id="calib" hidden></div>
+    <h3>MOBILE</h3>
+    <label class="check"><input type="checkbox" data-a="touchwheel" ${v.touchWheel ? 'checked' : ''}> Volant à l'écran (à la place des flèches ◀ ▶)</label>
+    <div class="row">
+      <label class="field">Braquage du volant tactile<select data-a="touchlock">${[90, 135, 180, 270].map((n) => `<option value="${n}" ${n === v.touchLock ? 'selected' : ''}>±${n}°</option>`).join('')}</select></label>
+    </div>
+    <p class="hint">Pose le pouce sur le volant et tourne-le. Lâché, il revient tout seul au centre. Moins de degrés = direction plus vive.</p>
     <h3>SENSATIONS</h3>
     <label class="check"><input type="checkbox" data-a="vibrate" ${v.vibrate ? 'checked' : ''}> Vibrations (manette, téléphone)</label>
     <label class="check"><input type="checkbox" data-a="fx" ${v.fx ? 'checked' : ''}> Effets de vitesse (traits, halo du turbo)</label>

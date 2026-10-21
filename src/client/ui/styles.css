@@ -169,6 +169,25 @@ html, body {
 .tbtn.ready { background: rgba(80, 190, 255, 0.45); }
 .tbtn.item.ready { background: rgba(255, 204, 51, 0.4); }
 .tbtn.on { background: rgba(255, 255, 255, 0.35); transform: scale(0.95); }
+/* Volant tactile (remplace ◀ ▶ quand il est activé). */
+.twheel {
+  display: none;
+  pointer-events: auto;
+  touch-action: none;
+  width: clamp(140px, 42vmin, 230px);
+  height: clamp(140px, 42vmin, 230px);
+  border-radius: 50%;
+  background: rgba(20, 16, 36, 0.3);
+}
+.twheel svg { width: 100%; height: 100%; display: block; will-change: transform; }
+.twheel .rim { fill: none; stroke: rgba(10, 8, 20, 0.85); stroke-width: 11; }
+.twheel .rim-in { fill: none; stroke: rgba(255, 255, 255, 0.6); stroke-width: 3; }
+.twheel .spoke { fill: none; stroke: rgba(255, 255, 255, 0.55); stroke-width: 7; stroke-linejoin: round; }
+.twheel .hub { fill: rgba(10, 8, 20, 0.85); stroke: rgba(255, 255, 255, 0.6); stroke-width: 3; }
+.twheel .mark { fill: #ff4d4d; }
+.twheel.on { background: rgba(255, 255, 255, 0.18); }
+#touch.wheel-mode .twheel { display: block; }
+#touch.wheel-mode .tbtn[data-k='left'], #touch.wheel-mode .tbtn[data-k='right'] { display: none; }
 
 /* ---------- Écrans ---------- */
 #screens { position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none; padding: 10px; }

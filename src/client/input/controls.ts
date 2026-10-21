@@ -51,6 +51,13 @@ export class Controls {
   private touchKeys = new Set<string>();
   private pointers = new Map<number, { x: number; y: number }>();
   private steer = 0;
+  /** Volant tactile : angle affiché (degrés), doigt qui le tient, dernier angle du doigt. */
+  private tw = { deg: 0, finger: -1, last: 0 };
+  private twEl: HTMLElement | null;
+  private twSvg: SVGElement | null;
+  /** Volant tactile à la place de ◀ ▶, et sa butée (degrés de chaque côté). */
+  touchWheel = false;
+  touchLock = 135;
   autoGas = false;
   wheel: WheelConfig = { ...DEFAULT_WHEEL };
   /** Vibrations (manette et téléphone). */
@@ -93,6 +100,62 @@ export class Controls {
     addEventListener('pointerup', end);
     addEventListener('pointercancel', end);
     touchRoot.addEventListener('contextmenu', (e) => e.preventDefault());
+
+    // Volant tactile : on suit l'angle du doigt autour du centre, sans limite de tours
+    // (l'écart est déroulé à chaque mouvement), puis on bloque à la butée.
+    this.twEl = touchRoot.querySelector<HTMLElement>('#twheel');
+    this.twSvg = this.twEl?.querySelector('svg') ?? null;
+    const fingerAngle = (e: PointerEvent): number | null => {
+      const r = this.twEl!.getBoundingClientRect();
+      const dx = e.clientX - (r.left + r.width / 2), dy = e.clientY - (r.top + r.height / 2);
+      // Trop près du centre, l'angle saute : on l'ignore.
+      return Math.hypot(dx, dy) < r.width * 0.08 ? null : (Math.atan2(dy, dx) * 180) / Math.PI;
+    };
+    this.twEl?.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      if (this.tw.finger !== -1) return;
+      const a = fingerAngle(e);
+      this.tw.finger = e.pointerId;
+      this.tw.last = a ?? NaN;
+      this.twEl!.classList.add('on');
+    });
+    addEventListener('pointermove', (e) => {
+      if (e.pointerId !== this.tw.finger) return;
+      const a = fingerAngle(e);
+      if (a === null) return;
+      if (!Number.isNaN(this.tw.last)) {
+        let d = a - this.tw.last;
+        if (d > 180) d -= 360;
+        else if (d < -180) d += 360;
+        this.tw.deg = clamp(this.tw.deg + d, -this.touchLock, this.touchLock);
+      }
+      this.tw.last = a;
+      this.drawWheel();
+    });
+    const release = (e: PointerEvent) => {
+      if (e.pointerId !== this.tw.finger) return;
+      this.tw.finger = -1;
+      this.twEl!.classList.remove('on');
+    };
+    addEventListener('pointerup', release);
+    addEventListener('pointercancel', release);
+    addEventListener('blur', () => {
+      this.tw.finger = -1;
+      this.twEl?.classList.remove('on');
+    });
+  }
+
+  /** Affiche ou masque le volant tactile (à la place de ◀ ▶). */
+  setTouchWheel(on: boolean, lock = this.touchLock): void {
+    this.touchWheel = on;
+    this.touchLock = lock;
+    this.tw.deg = clamp(this.tw.deg, -lock, lock);
+    this.touchRoot.classList.toggle('wheel-mode', on);
+    this.drawWheel();
+  }
+
+  private drawWheel(): void {
+    if (this.twSvg) this.twSvg.style.transform = `rotate(${this.tw.deg.toFixed(1)}deg)`;
   }
 
   private refreshTouch(btns = [...this.touchRoot.querySelectorAll<HTMLElement>('.tbtn')]): void {
@@ -153,6 +216,15 @@ export class Controls {
       item ||= btn(3) > 0.5 || btn(5) > 0.5;
       left ||= btn(14) > 0.5;
       right ||= btn(15) > 0.5;
+    }
+
+    if (this.touchWheel) {
+      // Lâché, le volant revient au centre comme une vraie direction.
+      if (this.tw.finger === -1 && this.tw.deg !== 0) {
+        this.tw.deg -= Math.sign(this.tw.deg) * Math.min(Math.abs(this.tw.deg), dt * 720);
+        this.drawWheel();
+      }
+      if (analog === null && (this.tw.finger !== -1 || this.tw.deg !== 0)) analog = this.tw.deg / this.touchLock;
     }
 
     const target = (right ? 1 : 0) - (left ? 1 : 0);

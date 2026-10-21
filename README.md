@@ -19,7 +19,7 @@ Jeu de course en pixel art **isométrique**, **multijoueur en ligne** dans le na
 - **Classement en ligne** des meilleurs tours par circuit (top 10, un temps par pseudo), alimenté par les tours en solo, contre-la-montre et en ligne.
 - **Éditeur de circuit** : on pose et déplace des points, les mêmes règles que les circuits officiels sont vérifiées en direct ; le circuit sert en solo et dans les salles en ligne (envoyé aux autres joueurs).
 - Serveur autoritaire 60 Hz ; voiture du joueur prédite localement, autres voitures interpolées ; reconnexion automatique (pilote auto pendant la coupure).
-- Mobile : boutons tactiles ◀ ▶ / GAZ / FREIN / TURBO / OBJET, accélération automatique en option, plein écran paysage, installable sur l'écran d'accueil.
+- Mobile : volant à l'écran (on le tourne avec le pouce, il revient seul au centre, braquage ±90° à ±270° dans RÉGLAGES) ou flèches ◀ ▶, boutons GAZ / FREIN / TURBO / OBJET, accélération automatique en option, plein écran paysage, installable sur l'écran d'accueil.
 
 ## Lancer
 
@@ -39,7 +39,7 @@ Docker : `docker compose up -d --build` (le classement est gardé dans le volume
 |---|---|---|---|
 | Gaz | ↑ ou Z (W en QWERTY) | GAZ | RT / A |
 | Frein, marche arrière | ↓ ou S | FREIN | LT / B |
-| Diriger | ← → ou Q D | ◀ ▶ | stick gauche |
+| Diriger | ← → ou Q D | volant à l'écran ou ◀ ▶ | stick gauche |
 | Dérapage | freiner à grande vitesse | FREIN | LT |
 | Turbo | Espace ou Maj | TURBO | X / LB |
 | Objet | E, F, Entrée ou Ctrl | OBJET | Y / RB |
